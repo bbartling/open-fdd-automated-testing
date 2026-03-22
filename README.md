@@ -1,5 +1,7 @@
 # Open-FDD Automated Testing
 
+> Getting started note: [OpenClaw setup with ChatGPT subscription / Codex OAuth (not API key)](docs/openclaw_subscription_setup.md)
+
 ![Open-FDD automated testing dashboard](docs/images/dashboard_snip.png)
 
 ## Core validation layers
@@ -127,12 +129,13 @@ Important context is saved in versioned markdown under `docs/` so humans and fut
 
 ### Where context is documented
 
-- `docs/operational_states.md`
-- `docs/overnight_review.md`
-- `docs/bacnet_graph_context.md`
-- `docs/ai_pr_review_playbook.md`
-- `docs/testing_plan.md`
-- `docs/context_and_recordkeeping.md`
+- [`docs/openclaw_subscription_setup.md`](docs/openclaw_subscription_setup.md)
+- [`docs/operational_states.md`](docs/operational_states.md)
+- [`docs/overnight_review.md`](docs/overnight_review.md)
+- [`docs/bacnet_graph_context.md`](docs/bacnet_graph_context.md)
+- [`docs/ai_pr_review_playbook.md`](docs/ai_pr_review_playbook.md)
+- [`docs/testing_plan.md`](docs/testing_plan.md)
+- [`docs/context_and_recordkeeping.md`](docs/context_and_recordkeeping.md)
 
 ### What this documentation is meant to preserve
 
