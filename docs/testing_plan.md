@@ -62,6 +62,10 @@ The repo should keep visible documentation for:
 
 The overnight workflow should also:
 - validate important README and docs links
+- make sure link checking is done against the correct target branches
+- treat `master` as the primary target branch
+- optionally check one active development branch when it is the intended docs destination for unreleased fixes
+- avoid mixing findings from unrelated feature branches
 - identify missing docs pages or thin areas
 - suggest documentation improvements that make the system easier for both humans and AI agents to understand
 - record those suggestions in durable repo docs or review notes

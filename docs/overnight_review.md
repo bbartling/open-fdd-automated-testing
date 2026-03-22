@@ -41,7 +41,13 @@ Expected evidence sources include:
 
 Do not call something a product bug unless the evidence chain is specific enough to reproduce.
 
+For docs and link review, make sure the branch context is explicit:
+- prefer `master` as the default branch under review
+- optionally check one intended development branch when that branch is the real destination for an unreleased fix
+- do not mix findings across many branches; the working assumption is two branches only: `master` and one active dev branch
+
 Examples:
 - a repeatable BACnet discovery 422 for one device may be issue-worthy
 - a blanket 401 from protected endpoints may simply indicate auth drift
 - a missing suite log is an automation reliability issue, even if the product is fine
+- a broken docs link on `master` matters immediately; a fix that only exists on the active dev branch should be called out as branch-specific
