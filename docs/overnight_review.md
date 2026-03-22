@@ -25,6 +25,8 @@ Use three categories:
 - **FAIL** - evidence is present and the behavior clearly did not match expectation
 - **INCONCLUSIVE** - the test did not gather enough reliable evidence to decide
 
+For BACnet-to-fault verification, the overnight review should produce a durable report in `reports/` using the BACnet verification template when possible.
+
 ## Evidence sources
 
 Expected evidence sources include:

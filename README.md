@@ -137,8 +137,19 @@ Important context is saved in versioned markdown under `docs/` so humans and fut
 - how the three operational states are being used
 - how overnight testing is reviewed
 - how BACnet graph context is interpreted
+- how BACnet devices, point addressing, YAML fault rules, and rolling windows should be verified together
 - how PR review and overnight log review should work
 - how this experience is being recorded so future clones do not depend on tribal knowledge
+
+For the human-facing explanation of how OpenClaw saves context in this repo, see:
+- [`docs/context_and_recordkeeping.md`](docs/context_and_recordkeeping.md)
+
+---
+
+## License
+
+This project is licensed under the **MIT License**. See [LICENSE](LICENSE).
+so future clones do not depend on tribal knowledge
 
 For the human-facing explanation of how OpenClaw saves context in this repo, see:
 - [`docs/context_and_recordkeeping.md`](docs/context_and_recordkeeping.md)

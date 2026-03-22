@@ -43,10 +43,14 @@ This is no longer optional background metadata. It is core operational context.
 
 The target standard is:
 - fake BACnet device fault schedule is known
-- BACnet gateway confirms source values
+- DIY BACnet server RPC confirms source values
+- Open-FDD data-model SPARQL queries confirm BACnet devices and point addressing
 - Open-FDD scrape path receives those values
 - YAML rules + rolling windows predict an expected fault
 - Open-FDD fault outputs show that exact fault
+- the overnight process writes a durable report
+
+See `docs/bacnet_fault_verification.md` and `reports/overnight-bacnet-verification-template.md`.
 
 ### 4. Preserve reusable context for future clones
 
