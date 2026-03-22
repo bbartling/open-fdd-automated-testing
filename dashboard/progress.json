@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-03-22T11:32:00-05:00",
+  "generated_at": "2026-03-22T11:54:00-05:00",
   "window": "last 24 hours",
   "summary": {
     "status": "active",
@@ -9,6 +9,15 @@
       "PR monitoring and CodeRabbit-style review",
       "Docs/link review and context recordkeeping"
     ]
+  },
+  "timeseries": {
+    "labels": ["03-16", "03-17", "03-18", "03-19", "03-20", "03-21", "03-22"],
+    "api_calls_total": [0, 0, 0, 0, 0, 8, 57],
+    "openfdd_local_api_calls": [0, 0, 0, 0, 0, 5, 29],
+    "raw_bacnet_rpc_requests": [0, 0, 0, 0, 0, 0, 3],
+    "context_notes_pushed": [0, 0, 0, 0, 0, 2, 12],
+    "context_window_relapse": [0, 0, 0, 0, 0, 1, 6],
+    "notes": "These are currently lightweight dashboard metrics and inferred counts, not a full historical telemetry system. Today is the first real capture day for this view."
   },
   "timeline": [
     {
@@ -40,6 +49,11 @@
       "time": "2026-03-22 11:32 CDT",
       "title": "Started progress dashboard",
       "details": "Built a bare-bones dashboard to visualize work completed over the past 24 hours and local/GitHub progress artifacts."
+    },
+    {
+      "time": "2026-03-22 11:54 CDT",
+      "title": "Extended dashboard with 7-day time series",
+      "details": "Added default 7-day charts for inferred API activity, Open-FDD local API interactions, raw BACnet RPC requests, context pushes, context-window relapse, and recent log entries."
     }
   ],
   "github": {
@@ -56,14 +70,22 @@
     }
   },
   "recent_commits": [
+    {"sha": "b9cdeaa", "time": "2026-03-22 11:41 CDT", "message": "Add dashboard screenshot to README"},
+    {"sha": "9c9491d", "time": "2026-03-22 11:34 CDT", "message": "Add bare-bones local progress dashboard"},
     {"sha": "b4e4136", "time": "2026-03-22 10:48 CDT", "message": "Add BACnet fault-verification docs and overnight report structure"},
     {"sha": "1bf2c50", "time": "2026-03-22 10:39 CDT", "message": "Document branch-aware docs review"},
     {"sha": "c55d6af", "time": "2026-03-22 10:16 CDT", "message": "Expand overnight review to include docs and context gaps"},
     {"sha": "1512a73", "time": "2026-03-22 09:50 CDT", "message": "Add README hyperlinks for saved context docs"},
     {"sha": "1815b63", "time": "2026-03-22 09:26 CDT", "message": "Trim README and document context recordkeeping"},
-    {"sha": "128ddfe", "time": "2026-03-22 09:19 CDT", "message": "Add AI PR review playbook and overnight log plan"},
-    {"sha": "fa97769", "time": "2026-03-22 08:30 CDT", "message": "Document BACnet graph context and testing plan"},
-    {"sha": "c4c83af", "time": "2026-03-22 08:20 CDT", "message": "Polish repo docs and add MIT license"}
+    {"sha": "128ddfe", "time": "2026-03-22 09:19 CDT", "message": "Add AI PR review playbook and overnight log plan"}
+  ],
+  "recent_logs": [
+    "06:10 Reviewed overnight Open-FDD logs; found partial BACnet discovery and missing automated_suite.log.",
+    "07:45 Scheduled docs/link review; confirmed broken README/docs links.",
+    "08:20-10:48 Pushed multiple repo context/documentation upgrades to GitHub.",
+    "09:03 Enabled continuous PR monitoring for open-fdd PR #81.",
+    "10:55 Opened issue #1 on automated-testing repo to track overnight BACnet/SPARQL maturity gaps.",
+    "11:32 Started local dashboard server and backed up dashboard code to GitHub."
   ],
   "key_findings": [
     "Overnight suite evidence is useful but still needs a durable generated BACnet verification report.",
