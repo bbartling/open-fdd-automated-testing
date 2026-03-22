@@ -1,30 +1,147 @@
 # Open-FDD Automated Testing
 
-A working toolkit for validating **Open-FDD**, **BACnet test-bench integrations**, **SPARQL/data-model flows**, and **OpenClaw-assisted operations**.
+Professional validation harnesses for **Open-FDD**, **BACnet-backed fault verification**, **AI-assisted data modeling workflows**, and **live HVAC monitoring support**.
 
 Repo: <https://github.com/bbartling/open-fdd-automated-testing>
 
-## What this repo is for
+## Why this repo exists
 
-This repo tracks the practical testing harness around Open-FDD:
+This repository is the practical test and operations layer around Open-FDD. It is meant to be cloned onto another workstation or test bench and used as a repeatable engineering toolkit for:
 
-- Selenium/UI regression checks
-- SPARQL/API/frontend parity testing
-- BACnet test bench validation with fake devices and scheduled faults
-- FDD rule hot-reload verification
-- Notes, prompts, and operational playbooks for OpenClaw working with Open-FDD
+- **Advanced web application testing** for the Open-FDD frontend and API
+- **Advanced data-model verification** for Brick / BACnet / SPARQL workflows
+- **Advanced HVAC monitoring validation** using deterministic fake BACnet devices and expected fault windows
+- **Autonomous OpenClaw-assisted operation**, where the agent can execute tests, summarize failures, investigate regressions, and draft GitHub issues when evidence is strong enough
+
+The goal is not just to run scripts. The goal is to create **defensible evidence** that:
+
+1. BACnet discovery is working
+2. scraped telemetry is arriving in Open-FDD
+3. the active YAML rule set is the rule set we think is running
+4. rolling-window logic is behaving as expected
+5. expected faults are actually visible through Open-FDD APIs and UI surfaces
 
 ---
 
-## Core test scripts
+## Repository layout
 
-- `1_e2e_frontend_selenium.py` — end-to-end frontend smoke/regression
-- `2_sparql_crud_and_frontend_test.py` — SPARQL API + frontend parity
-- `3_long_term_bacnet_scrape_test.py` — BACnet scrape cadence + expected fault schedule checks
-- `4_hot_reload_test.py` — YAML rule upload/sync + FDD verification
-- `automated_suite.py` — orchestrator that chains the full suite together
+```text
+.
+├─ README.md
+├─ LICENSE
+├─ docs/
+│  ├─ cloning_and_porting.md
+│  ├─ operational_states.md
+│  └─ overnight_review.md
+├─ fake_bacnet_devices/
+│  ├─ fault_schedule.py
+│  ├─ fake_ahu_faults.py
+│  ├─ fake_vav_faults.py
+│  └─ README.md
+├─ rules/
+├─ sparql/
+├─ 1_e2e_frontend_selenium.py
+├─ 2_sparql_crud_and_frontend_test.py
+├─ 3_long_term_bacnet_scrape_test.py
+├─ 4_hot_reload_test.py
+├─ automated_suite.py
+├─ run_midnight_suite.cmd
+├─ run_overnight_bacnet.cmd
+└─ requirements-e2e.txt
+```
 
-### Example full-suite run
+---
+
+## Core validation layers
+
+### 1. Frontend and API regression testing
+
+- Selenium-based UI smoke and regression coverage
+- frontend-to-API parity checks
+- SPARQL CRUD and data-model validation
+- verification that visible app state matches backend truth
+
+### 2. AI-assisted data modeling verification
+
+- export/import Open-FDD data model flows
+- Brick tagging and `rule_input` mapping validation
+- SPARQL checks that confirm imported data is usable by Open-FDD
+- evidence that AI-assisted tagging outputs still land in the app correctly
+
+### 3. Live BACnet and FDD verification
+
+- fake BACnet devices with deterministic fault schedules
+- BACnet scraping validation against known bad-good windows
+- YAML rule hot-reload checks
+- proof that faults are computed and surfaced by Open-FDD as expected
+
+---
+
+## Three operational states
+
+This repo is organized around three real operational states that Open-FDD development and deployment move through.
+
+### 1) Application validation state
+
+Use this state when Open-FDD itself is the thing under test.
+
+**Purpose**
+- validate frontend behavior
+- validate API behavior
+- catch regressions in Selenium, SPARQL, auth, hot reload, and BACnet integration
+
+**Primary scripts**
+- `1_e2e_frontend_selenium.py`
+- `2_sparql_crud_and_frontend_test.py`
+- `4_hot_reload_test.py`
+- `automated_suite.py`
+
+### 2) AI-assisted data-modeling state
+
+Use this state when a site is being modeled or remapped.
+
+**Purpose**
+- verify export/import flows
+- verify Brick tagging quality
+- verify `rule_input` mappings
+- confirm that data modeling decisions still support FDD and UI workflows
+
+**Primary assets**
+- `sparql/`
+- demo import payloads
+- Open-FDD docs and model-context endpoints
+
+### 3) Live HVAC monitoring state
+
+Use this state when the deployment is acting like a real operations platform.
+
+**Purpose**
+- verify telemetry is being scraped
+- verify rules are executing over real timeseries
+- verify expected faults are visible to developers and operators
+- support operator-style summaries, maintenance triage, and platform health review
+
+**Primary assets**
+- `3_long_term_bacnet_scrape_test.py`
+- `fake_bacnet_devices/`
+- `rules/`
+- overnight automation scripts
+
+These are not just marketing buckets. They reflect three different reasoning contexts with different evidence requirements and different failure modes.
+
+---
+
+## Core scripts
+
+| Script | Purpose |
+|---|---|
+| `1_e2e_frontend_selenium.py` | End-to-end frontend smoke and UI regression coverage |
+| `2_sparql_crud_and_frontend_test.py` | SPARQL/API/frontend parity and CRUD validation |
+| `3_long_term_bacnet_scrape_test.py` | BACnet scrape cadence, telemetry arrival, and expected fault verification |
+| `4_hot_reload_test.py` | Rule upload/sync, hot reload, and FDD verification |
+| `automated_suite.py` | Orchestrates the major test phases into one run |
+
+### Full suite example
 
 ```bash
 python automated_suite.py \
@@ -36,231 +153,79 @@ python automated_suite.py \
 
 ---
 
-# Three OpenClaw operating modes
+## Overnight development workflow
 
-## 1) Open-FDD app testing mode
+Recommended unattended cadence:
 
-Use this when validating the application itself.
+- **Evening / overnight:** BACnet soak and fault-window validation
+- **Midnight:** full regression suite
+- **Morning:** human or OpenClaw review of logs, summaries, and candidate bugs
 
-### Goals
+The standard morning review should answer:
 
-- Selenium/UI regression
-- SPARQL/API parity
-- BACnet test bench + fake faults
-- FDD / hot reload verification
+- Did BACnet discovery succeed for all expected devices?
+- Did scraped telemetry land for the modeled points?
+- Did the expected fault windows from the fake devices show up in Open-FDD?
+- Did Selenium/UI pass?
+- Did SPARQL parity pass?
+- Did rule hot reload still work?
+- Is any failure clearly a product bug vs environment drift or auth/setup drift?
 
-### What OpenClaw should do
-
-- Run `1_`, `2_`, `3_`, `4_`, or `automated_suite.py`
-- Compare frontend state vs backend APIs
-- Verify fake BACnet devices are producing expected telemetry/fault windows
-- Watch for flaky SPARQL/UI timing issues
-- Draft GitHub issues for real product bugs only
-
-### Useful context to capture
-
-- Which BACnet devices were used (`3456789`, `3456790` for the fake bench)
-- What rule files were active
-- Whether FDD faults appeared in `/faults/state`, `/faults/active`, `/download/faults`
-- Whether frontend results matched API results
+See `docs/overnight_review.md`.
 
 ---
 
-## 2) Open-FDD setup / AI-assisted data modeling mode
+## Cloning this to another environment
 
-Use this when setting up a new Open-FDD deployment.
+This repo is designed to be portable.
 
-### Goals
+At a minimum, another engineer or lab should be able to clone this repo and reconnect the same testing ideas to a different Open-FDD environment by providing:
 
-- Discover BACnet devices
-- Export/import data model JSON
-- Brick tagging workflow
-- Guided OpenClaw help for turning discovered points into a usable model
+- Open-FDD frontend URL
+- Open-FDD API URL
+- API auth if required
+- BACnet gateway URL / fake-device host(s)
+- site identifiers used by the deployment
+- active rule directory inside Open-FDD
 
-### What OpenClaw should do
-
-- Read Open-FDD docs first
-- Use `/data-model/export`, `/data-model/import`, `/model-context/docs`
-- Assist with Brick tagging and rule_input mapping
-- Verify the imported model appears correctly in the UI and SPARQL layer
-- Keep notes about site/equipment/point naming conventions
-
-### Suggested OpenClaw prompt for guided setup
-
-```text
-You are helping set up Open-FDD on a new system.
-
-Tasks:
-1. Inspect the Open-FDD docs and current API state.
-2. Discover BACnet devices and summarize what was found.
-3. Export the current data model JSON.
-4. Propose Brick tagging + rule_input mapping for the discovered points.
-5. Prepare a clean import payload.
-6. Verify the imported result through the API and the frontend.
-7. Note any gaps, ambiguities, or points that still need human review.
-```
+See `docs/cloning_and_porting.md` for the intended portability model.
 
 ---
 
-## 3) Live HVAC monitoring / operator-assistant mode
+## OpenClaw role in this repo
 
-Use this on a real building network where Open-FDD is already running.
+OpenClaw is expected to operate here as a highly capable engineering assistant that can:
 
-### Goals
+- run and compare test phases
+- investigate mismatches between frontend, API, BACnet, and FDD outcomes
+- summarize overnight results
+- verify whether a failure is likely real or merely environmental
+- draft GitHub issues only when evidence is specific and reproducible
 
-- Monitor Open-FDD health
-- Inspect faults and telemetry
-- Optionally use diy-bacnet-server RPC / BACpypes3 context
-- Draft work orders / operator summaries / maintenance notes
-
-### What OpenClaw should do
-
-- Check Open-FDD API health and last FDD run
-- Review active faults and fault history
-- Inspect relevant telemetry around each fault
-- Cross-reference BACnet point names/device ids/object identifiers
-- Write concise operator-facing summaries
-- Draft work-order style next steps, not just technical dumps
-
-### Example operator-assistant prompt
-
-```text
-You are acting as an HVAC operator assistant for a live Open-FDD deployment.
-
-Tasks:
-1. Check system health, recent FDD runs, and current active faults.
-2. Inspect telemetry related to the most important faults.
-3. Summarize what appears broken, abnormal, or worth watching.
-4. Draft operator-ready work orders with equipment name, issue, likely cause, and next action.
-5. If BACnet context is needed, use diy-bacnet-server RPC / known BACnet metadata to explain the issue clearly.
-6. Keep the summary concise and useful for building operations.
-```
+This repo is intentionally being shaped so an autonomous agent can work effectively **without turning the repository into agent-only glue code**. Human engineers should still be able to inspect the structure, understand the reasoning, and reuse the testing assets directly.
 
 ---
 
-# OpenClaw configuration notes
+## Documentation roadmap
 
-## Preferred local auth: OpenAI Codex OAuth (ChatGPT subscription)
+The documentation in this repo should explain not only how to run the scripts, but **why this style of testing matters** for Open-FDD development.
 
-If you are using a ChatGPT/OpenAI subscription and want OpenClaw to use **Codex OAuth** instead of an API key, the key idea is:
+Current emphasis:
 
-- use `openai-codex`
-- remove stale `openai` API-key config
-- verify the active model is `openai-codex/gpt-5.4`
+- how the repo maps to the three operational states
+- how overnight testing should be reviewed
+- how to clone or port the setup elsewhere
+- how deterministic fake BACnet faults support high-confidence FDD verification
 
-### Working onboarding flow
+### Important next documentation targets
 
-```bash
-openclaw onboard --auth-choice openai-codex
-```
-
-### Important cleanup
-
-OpenClaw may still keep old `openai` provider references around. If that happens, clean the config so only `openai-codex` remains.
-
-Expected good shape:
-
-```json
-"auth": {
-  "profiles": {
-    "openai-codex:default": {
-      "provider": "openai-codex",
-      "mode": "oauth"
-    }
-  }
-},
-"agents": {
-  "defaults": {
-    "model": {
-      "primary": "openai-codex/gpt-5.4"
-    },
-    "models": {
-      "openai-codex/gpt-5.4": {}
-    }
-  },
-  "list": [
-    {
-      "id": "main",
-      "model": "openai-codex/gpt-5.4"
-    }
-  ]
-}
-```
-
-### Also clean
-
-```text
-~/.openclaw/agents/main/agent/auth-profiles.json
-```
-
-Remove stale:
-
-```json
-"openai:default"
-```
-
-Keep:
-
-```json
-"openai-codex:default"
-```
-
-### Restart and verify
-
-```bash
-openclaw gateway stop
-openclaw gateway
-openclaw models status --probe
-```
-
-Expected:
-
-- `openai-codex/gpt-5.4` works
-- no `openai/...` fallback remains
-- no API key is required
-
-### Credit
-
-This OAuth cleanup pattern was inspired by notes from **Matthew Berman**:
-<https://www.youtube.com/@matthew_berman>
+- exact BACnet-to-fault verification chain
+- active YAML rule inventory and rolling-window expectations
+- evidence formats for pass / fail / inconclusive outcomes
+- docker-log correlation once container-log access is integrated
 
 ---
 
-# Suggested automation cadence
+## License
 
-If this computer is online:
-
-- **6:00 PM–6:00 AM** — run longer BACnet/fault soak testing
-- **Midnight** — run `automated_suite.py`
-- **Morning** — review results, summarize failures, draft issues if needed
-
-Recommended unattended mode is **headless**. `--headed` is only needed when watching Selenium visually.
-
----
-
-# Documentation gaps to track
-
-Known gap already filed on Open-FDD:
-
-- Open-FDD issue #80 — missing references for automated-testing rules/SPARQL cookbooks in the docs
-
-Also keep checking:
-
-- online docs links
-- README links
-- LLM prompt links / documentation PDF links
-- parity between docs and what the app/API actually does
-
----
-
-# Notes for future rebuild / disaster recovery
-
-If this machine dies, recreate the setup by restoring:
-
-1. This repo (`open-fdd-automated-testing`)
-2. OpenClaw auth/config
-3. Open-FDD repo + docs
-4. The BACnet test bench fake devices
-5. Scheduled tasks / cron-like jobs for nightly testing
-
-A future addition here should be a dedicated `PROMPTS.md` / `RECOVERY.md` with exact rebuild steps.
+This project is licensed under the **MIT License**. See [LICENSE](LICENSE).
