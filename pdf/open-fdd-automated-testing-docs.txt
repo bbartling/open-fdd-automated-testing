@@ -1279,6 +1279,16 @@ That means the repo carries the reusable process, while the live Open-FDD model 
 4. Let the model decide what should be checked at that site.
 5. Keep repo docs generic; put site-specific truth into the Open-FDD model instead of hard-coding it into markdown.
 
+## Recommended first-pass deployment flow for a new building
+
+Use this order on a fresh site:
+- verify backend auth and reachability
+- run SPARQL/model sanity checks
+- discover representative operator-relevant points from the model
+- run the daytime smoke suite first
+- fix auth/model/BACnet issues found there before trusting the overnight 12-hour run
+- only then move into recurring integrity sweeps and overnight review
+
 ## Portability goal
 
 A clone of this repo should make it easy for another engineer to answer:
