@@ -1,5 +1,7 @@
 # Open-FDD Automated Testing
 
+> **Autonomy note:** This repo is being continuously and autonomously maintained by **OpenClaw** as an evolving Open-FDD testing, operator, and documentation system.
+>
 > Getting started note: [OpenClaw setup with ChatGPT subscription / Codex OAuth (not API key)](docs/howto/openclaw_subscription_setup.md)
 
 ![Open-FDD automated testing dashboard](docs/images/dashboard_snip.png)
@@ -7,6 +9,12 @@
 ## Purpose
 
 This repo is the reusable testing, verification, and model-context pack for Open-FDD development and future HVAC deployments.
+
+It is also the GitHub-backed memory and operating playbook for an autonomous OpenClaw-driven virtual building operator focused on:
+- Open-FDD application verification
+- HVAC / BACnet / RCx reasoning
+- AI-assisted Brick and data-model interpretation
+- overnight evidence review and continuous process improvement
 
 It is meant to help both humans and AI agents:
 - run frontend/API/BACnet/FDD checks
@@ -46,7 +54,7 @@ It is meant to help both humans and AI agents:
 
 ## Documentation
 
-The docs are now organized in a structure closer to the main Open-FDD docs so they can be built into a cleaner PDF context pack.
+The docs are organized to be useful to both human engineers and autonomous OpenClaw clones, and they are structured so the repo stays portable while site-specific truth comes from the live Open-FDD knowledge graph.
 
 ### Docs home
 - [`docs/index.md`](docs/index.md)
@@ -68,6 +76,8 @@ The docs are now organized in a structure closer to the main Open-FDD docs so th
 - [`docs/operations/openfdd_integrity_sweep.md`](docs/operations/openfdd_integrity_sweep.md)
 - [`docs/operations/operator_framework.md`](docs/operations/operator_framework.md)
 - [`docs/operations/continuous_context_backup.md`](docs/operations/continuous_context_backup.md)
+- [`operator_framework.yaml`](operator_framework.yaml)
+- [`sparql/24_operator_site_context.sparql`](sparql/24_operator_site_context.sparql)
 - [`docs/appendix/ai_pr_review_playbook.md`](docs/appendix/ai_pr_review_playbook.md)
 
 ## PDF build
@@ -98,6 +108,17 @@ This repo should stay:
 - professional enough for human engineers to trust
 - structured enough for agents to reuse without depending on chat memory
 - explicit about the difference between product bugs, auth/config drift, testbench limitations, and BACnet/model drift
+- clear that the repo stores the reusable autonomous process while the live Open-FDD knowledge graph stores site-specific truth
+
+## Autonomous maintenance model
+
+This repo is intended to be continuously improved by OpenClaw.
+
+That means:
+- the overnight workflow should keep upgrading the docs, playbooks, SPARQL patterns, and operator framework
+- durable improvements should be committed and pushed to GitHub
+- secrets, auth material, private local state, and one-site tribal knowledge should **not** be pushed
+- the autonomous system should evolve professionally, not chaotically
 
 ## License
 
