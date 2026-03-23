@@ -8,12 +8,20 @@ nav_order: 1
 
 This repo should be portable to another lab, another workstation, or another Open-FDD deployment with minimal conceptual changes.
 
+## Core portability idea
+
+Same tools, any building — only the knowledge graph changes.
+
+That means the repo carries the reusable process, while the live Open-FDD model carries the site-specific truth.
+
 ## What should transfer cleanly
 
 - the test phases
 - the BACnet fake-device approach
 - the overnight review discipline
 - the SPARQL validation set
+- the operator framework
+- the continuous context-backup loop
 - the idea of proving telemetry-to-fault correctness rather than only checking page loads
 
 ## What usually changes per environment
@@ -29,6 +37,18 @@ This repo should be portable to another lab, another workstation, or another Ope
 - the actual HVAC system, naming conventions, and semantic model shape
 - SPARQL queries or filters needed for that environment
 
+## What to do when deploying to another site
+
+1. Resolve the target frontend/backend/BACnet endpoints from the real launch context.
+2. Confirm auth works from the shell or runtime that will actually run the checks.
+3. Query the Open-FDD model first:
+   - sites
+   - equipment
+   - BACnet devices
+   - representative outdoor / plant / air / zone points
+4. Let the model decide what should be checked at that site.
+5. Keep repo docs generic; put site-specific truth into the Open-FDD model instead of hard-coding it into markdown.
+
 ## Portability goal
 
 A clone of this repo should make it easy for another engineer to answer:
@@ -42,7 +62,9 @@ A clone of this repo should make it easy for another engineer to answer:
 ## Engineering principle
 
 Keep environment-specific values configurable and keep the verification logic reusable.
--FDD runs on some other server (often a Linux box on the OT LAN)
+
+In practice, deployment to another site usually looks like this:
+- Open-FDD runs on some other server (often a Linux box on the OT LAN)
 - the testing/tooling repo is cloned onto another machine
 - the tooling is pointed at the target Open-FDD URL, auth, BACnet gateway, and rule/model context for that environment
 

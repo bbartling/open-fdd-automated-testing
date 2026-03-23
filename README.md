@@ -4,7 +4,9 @@
 >
 > Getting started note: [OpenClaw setup with ChatGPT subscription / Codex OAuth (not API key)](docs/howto/openclaw_subscription_setup.md)
 
-![Open-FDD automated testing dashboard](docs/images/dashboard_snip.png)`r`n`r`n> **Tagline:** Same tools, any building — only the knowledge graph changes.
+![Open-FDD automated testing dashboard](docs/images/dashboard_snip.png)
+
+> **Tagline:** Same tools, any building â€” only the knowledge graph changes.
 
 ## Purpose
 
@@ -76,6 +78,7 @@ The docs are organized to be useful to both human engineers and autonomous OpenC
 - [`docs/operations/openfdd_integrity_sweep.md`](docs/operations/openfdd_integrity_sweep.md)
 - [`docs/operations/operator_framework.md`](docs/operations/operator_framework.md)
 - [`docs/operations/continuous_context_backup.md`](docs/operations/continuous_context_backup.md)
+- [`docs/howto/cloning_and_porting.md`](docs/howto/cloning_and_porting.md)
 - [`operator_framework.yaml`](operator_framework.yaml)
 - [`sparql/24_operator_site_context.sparql`](sparql/24_operator_site_context.sparql)
 - [`docs/appendix/ai_pr_review_playbook.md`](docs/appendix/ai_pr_review_playbook.md)
