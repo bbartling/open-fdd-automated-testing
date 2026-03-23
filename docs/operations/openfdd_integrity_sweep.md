@@ -103,6 +103,24 @@ If this breaks, classify it clearly:
 
 ## Current test-bench mode vs future real HVAC mode
 
+The dashboard and sweep summary should explicitly surface mode awareness, not leave it implicit.
+
+Recommended fields for every sweep/dashboard summary:
+- environment mode: `TEST BENCH` or `LIVE HVAC`
+- mode basis: why that mode was chosen
+- operator alert level: info / warning / urgent
+- seasonal/time basis: what local time/season/weather context was used
+- HVAC sanity summary: what broadly makes sense for this mode
+
+## Interaction with the overnight workflow
+
+The every-10-minute integrity sweep should not blindly compete with the richer overnight workflow.
+
+Rule:
+- if the dedicated 6 PM to 6 AM overnight Open-FDD testing/review workflow is active, the normal 10-minute integrity sweep should stand down or stay quiet unless it detects a genuinely new high-signal alert
+- the overnight workflow is already doing broader PR/log/docs/BACnet/FDD review, so duplicate low-signal chatter is not useful
+- outside the overnight workflow, the integrity sweep is the lightweight daytime safety/integrity pulse
+
 ### Current mode
 Today this is primarily a fake-data / test-bench environment.
 
@@ -120,8 +138,25 @@ Examples:
 - in winter, representative heating-related points should not look absurd relative to outdoor conditions
 - in summer, representative cooling-related points should not look absurd relative to outdoor conditions
 - use weather/season as a weak sanity input, not as proof of a control bug
+- think like a comfort/safety-conscious human building operator, but grounded in the data model and actual point evidence
 
 Do not over-claim from sparse points.
+
+The sweep should alternate across modeled devices to verify liveness broadly, but it should not waste cycles equally on low-value points.
+
+Instead, in live HVAC mode it should bias toward operator-meaningful and seasonally critical components derived from the knowledge graph, for example:
+- winter: boilers, hot-water systems, pumps, heating enable, hot-water temperature, representative heating distribution points
+- summer: chillers, condenser/chilled-water systems, pumps, cooling enable, chilled-water temperature, representative cooling distribution points
+- air systems: fan status, airflow/pressure relationships, supply-air temperature, key commands vs feedback
+- occupied/unoccupied logic: if the building is unoccupied, focus more on zone temperature protection, freeze/overheat risk, and whether equipment that should be off is still running
+
+The point is to verify that important devices are online and that the building broadly makes sense at an operator level, not to burn reads on worthless internal/controller-only points when more meaningful plant/air/zone points exist.
+
+The dashboard should eventually tell the human not only that integrity is broken, but whether the building appears:
+- broadly comfortable
+- mechanically suspicious
+- energy-wasteful
+- safety- or occupant-risking
 
 ## Why this exists
 
@@ -138,3 +173,4 @@ That makes the overnight run more trustworthy and less likely to waste a whole n
 
 
 That makes the overnight run more trustworthy and less likely to waste a whole night on a broken launch context.
+un more trustworthy and less likely to waste a whole night on a broken launch context.
