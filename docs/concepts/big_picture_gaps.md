@@ -1,3 +1,9 @@
+---
+title: Big picture gaps and product suggestions
+parent: Concepts
+nav_order: 3
+---
+
 # Big Picture Gaps and Product Suggestions
 
 This is a running list of higher-level product, workflow, and documentation gaps discovered while operating Open-FDD and its automated testing stack.

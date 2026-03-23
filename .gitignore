@@ -3,3 +3,5 @@ __pycache__/
 *.log
 *.tmp
 *.bak
+dashboard/local-progress.json
+docs/_build/

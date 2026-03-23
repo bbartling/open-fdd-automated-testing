@@ -1,3 +1,9 @@
+---
+title: Operational states
+parent: Concepts
+nav_order: 1
+---
+
 # Operational States
 
 Open-FDD development and field verification naturally fall into three operational states.

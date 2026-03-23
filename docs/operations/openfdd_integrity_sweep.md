@@ -1,3 +1,9 @@
+---
+title: Open-FDD integrity sweep
+parent: Operations
+nav_order: 3
+---
+
 # Open-FDD Integrity Sweep
 
 This note defines the lightweight every-10-minute integrity sweep for Open-FDD test benches and future OT-LAN deployments.

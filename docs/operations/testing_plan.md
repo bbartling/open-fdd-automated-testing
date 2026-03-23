@@ -1,3 +1,9 @@
+---
+title: Testing plan
+parent: Operations
+nav_order: 2
+---
+
 # Testing Plan
 
 This is the evolving engineering plan for Open-FDD automated testing.
@@ -14,7 +20,7 @@ The OpenClaw workflow should continuously watch active PRs in the same spirit as
 - run targeted local checks where possible
 - write down risks, limitations, and next tests instead of relying on chat memory
 
-See `docs/ai_pr_review_playbook.md`.
+See `docs/appendix/ai_pr_review_playbook.md`.
 
 
 ### 1. Restore authenticated backend graph checks

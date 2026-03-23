@@ -1,3 +1,9 @@
+---
+title: BACnet graph context
+parent: BACnet verification
+nav_order: 1
+---
+
 # BACnet Graph Context
 
 This document captures the BACnet-specific context that the automated testing repo should preserve for future clones, future labs, and future researchers.
@@ -140,6 +146,6 @@ That chain is the real standard for trustworthy FDD validation.
 ## Where this context is saved
 
 This context is intentionally stored in the repo at:
-- `docs/bacnet_graph_context.md`
+- `docs/bacnet/graph_context.md`
 
 Humans cloning the repo should be able to find it immediately, review it, and extend it without asking the original authors what was "meant."

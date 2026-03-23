@@ -1,27 +1,34 @@
 # Open-FDD Automated Testing
 
-> Getting started note: [OpenClaw setup with ChatGPT subscription / Codex OAuth (not API key)](docs/openclaw_subscription_setup.md)
+> Getting started note: [OpenClaw setup with ChatGPT subscription / Codex OAuth (not API key)](docs/howto/openclaw_subscription_setup.md)
 
 ![Open-FDD automated testing dashboard](docs/images/dashboard_snip.png)
+
+## Purpose
+
+This repo is the reusable testing, verification, and model-context pack for Open-FDD development and future HVAC deployments.
+
+It is meant to help both humans and AI agents:
+- run frontend/API/BACnet/FDD checks
+- review overnight evidence
+- preserve durable engineering context
+- carry lessons forward across future jobs and future buildings
 
 ## Core validation layers
 
 ### 1. Frontend and API regression testing
-
 - Selenium-based UI smoke and regression coverage
 - frontend-to-API parity checks
 - SPARQL CRUD and data-model validation
 - verification that visible app state matches backend truth
 
 ### 2. AI-assisted data modeling verification
-
 - export/import Open-FDD data model flows
 - Brick tagging and `rule_input` mapping validation
 - SPARQL checks that confirm imported data is usable by Open-FDD
 - evidence that AI-assisted tagging outputs still land in the app correctly
 
 ### 3. Live BACnet and FDD verification
-
 - fake BACnet devices with deterministic fault schedules
 - BACnet scraping validation against known bad-good windows
 - BACnet graph/addressing validation through SPARQL and API checks
@@ -29,141 +36,66 @@
 - proof that faults are computed and surfaced by Open-FDD as expected
 - future-facing context for optimization and supervisory logic based on equipment semantics
 
----
-
-## Three operational states
-
-This repo is organized around three real operational states that Open-FDD development and deployment move through.
-
-### 1) Application validation state
-
-Use this state when Open-FDD itself is the thing under test.
-
-**Purpose**
-- validate frontend behavior
-- validate API behavior
-- catch regressions in Selenium, SPARQL, auth, hot reload, and BACnet integration
-
-**Primary scripts**
+## Main scripts
 - `1_e2e_frontend_selenium.py`
 - `2_sparql_crud_and_frontend_test.py`
+- `3_long_term_bacnet_scrape_test.py`
 - `4_hot_reload_test.py`
 - `automated_suite.py`
 
-### 2) AI-assisted data-modeling state
+## Documentation
 
-Use this state when a site is being modeled or remapped.
+The docs are now organized in a structure closer to the main Open-FDD docs so they can be built into a cleaner PDF context pack.
 
-**Purpose**
-- verify export/import flows
-- verify Brick tagging quality
-- verify `rule_input` mappings
-- confirm that data modeling decisions still support FDD and UI workflows
+### Docs home
+- [`docs/index.md`](docs/index.md)
 
-**Primary assets**
-- `sparql/`
-- demo import payloads
-- Open-FDD docs and model-context endpoints
+### Sections
+- [Concepts](docs/concepts/index.md)
+- [BACnet verification](docs/bacnet/index.md)
+- [Operations](docs/operations/index.md)
+- [How-to guides](docs/howto/index.md)
+- [Appendix](docs/appendix/index.md)
 
-### 3) Live HVAC monitoring state
+### Key pages
+- [`docs/concepts/operational_states.md`](docs/concepts/operational_states.md)
+- [`docs/concepts/context_and_recordkeeping.md`](docs/concepts/context_and_recordkeeping.md)
+- [`docs/bacnet/graph_context.md`](docs/bacnet/graph_context.md)
+- [`docs/bacnet/fault_verification.md`](docs/bacnet/fault_verification.md)
+- [`docs/operations/overnight_review.md`](docs/operations/overnight_review.md)
+- [`docs/operations/testing_plan.md`](docs/operations/testing_plan.md)
+- [`docs/operations/openfdd_integrity_sweep.md`](docs/operations/openfdd_integrity_sweep.md)
+- [`docs/appendix/ai_pr_review_playbook.md`](docs/appendix/ai_pr_review_playbook.md)
 
-Use this state when the deployment is acting like a real operations platform.
+## PDF build
 
-**Purpose**
-- verify telemetry is being scraped
-- verify rules are executing over real timeseries
-- verify expected faults are visible to developers and operators
-- support operator-style summaries, maintenance triage, and platform health review
+This repo now has its own docs PDF builder:
 
-**Primary assets**
-- `3_long_term_bacnet_scrape_test.py`
-- `fake_bacnet_devices/`
-- `rules/`
-- overnight automation scripts
+- `scripts/build_docs_pdf.py`
 
-These are not just marketing buckets. They reflect three different reasoning contexts with different evidence requirements and different failure modes.
+Expected output:
+- `pdf/open-fdd-automated-testing-docs.pdf`
+- `pdf/open-fdd-automated-testing-docs.txt`
 
----
+Example:
 
-## Overnight development workflow
+```bash
+python scripts/build_docs_pdf.py
+```
 
-Recommended unattended cadence:
+Requirements:
+- `pandoc`
+- `PyYAML`
+- for PDF output, a supported Pandoc engine such as `weasyprint`, `pdflatex`, or `xelatex`
 
-- **Evening / overnight:** BACnet soak and fault-window validation
-- **Midnight:** full regression suite
-- **Morning:** human or OpenClaw review of logs, summaries, and candidate bugs
+## Engineering principle
 
-The standard morning review should answer:
-
-- Did BACnet discovery succeed for all expected devices?
-- Did scraped telemetry land for the modeled points?
-- Did the expected fault windows from the fake devices show up in Open-FDD?
-- Did Selenium/UI pass?
-- Did SPARQL parity pass?
-- Did rule hot reload still work?
-- Is any failure clearly a product bug vs environment drift or auth/setup drift?
-
-See `docs/overnight_review.md`.
-
----
-
-## OpenClaw role in this repo
-
-OpenClaw is expected to operate here as a highly capable engineering assistant that can:
-
-- run and compare test phases
-- investigate mismatches between frontend, API, BACnet, and FDD outcomes
-- summarize overnight results
-- verify whether a failure is likely real or merely environmental
-- draft GitHub issues only when evidence is specific and reproducible
-
-This repo is intentionally being shaped so an autonomous agent can work effectively **without turning the repository into agent-only glue code**. Human engineers should still be able to inspect the structure, understand the reasoning, and reuse the testing assets directly.
-
----
-
-## Documentation and saved context
-
-This repo documents not just test execution, but the engineering context behind the work.
-
-Important context is saved in versioned markdown under `docs/` so humans and future agents can both inspect it.
-
-### Where context is documented
-
-- [`docs/openclaw_subscription_setup.md`](docs/openclaw_subscription_setup.md)
-- [`docs/operational_states.md`](docs/operational_states.md)
-- [`docs/overnight_review.md`](docs/overnight_review.md)
-- [`docs/bacnet_graph_context.md`](docs/bacnet_graph_context.md)
-- [`docs/ai_pr_review_playbook.md`](docs/ai_pr_review_playbook.md)
-- [`docs/testing_plan.md`](docs/testing_plan.md)
-- [`docs/big_picture_gaps.md`](docs/big_picture_gaps.md)
-- [`docs/context_and_recordkeeping.md`](docs/context_and_recordkeeping.md)
-
-### What this documentation is meant to preserve
-
-- how the three operational states are being used
-- how overnight testing is reviewed
-- how BACnet graph context is interpreted
-- how BACnet devices, point addressing, YAML fault rules, and rolling windows should be verified together
-- how PR review and overnight log review should work
-- how the local dashboard is meant to be run by an agent on request
-- how this experience is being recorded so future clones do not depend on tribal knowledge
-
-For the human-facing explanation of how OpenClaw saves context in this repo, see:
-- [`docs/context_and_recordkeeping.md`](docs/context_and_recordkeeping.md)
-
----
+This repo should stay:
+- portable across labs and OT LANs
+- professional enough for human engineers to trust
+- structured enough for agents to reuse without depending on chat memory
+- explicit about the difference between product bugs, auth/config drift, testbench limitations, and BACnet/model drift
 
 ## License
 
 This project is licensed under the **MIT License**. See [LICENSE](LICENSE).
-so future clones do not depend on tribal knowledge
-
-For the human-facing explanation of how OpenClaw saves context in this repo, see:
-- [`docs/context_and_recordkeeping.md`](docs/context_and_recordkeeping.md)
-
----
-
-## License
-
-This project is licensed under the **MIT License**. See [LICENSE](LICENSE).
-CENSE).

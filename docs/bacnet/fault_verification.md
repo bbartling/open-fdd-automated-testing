@@ -1,3 +1,9 @@
+---
+title: BACnet-to-fault verification
+parent: BACnet verification
+nav_order: 2
+---
+
 # BACnet-to-Fault Verification
 
 This document defines the verification practice we need to master for both development testing and future live HVAC deployments.

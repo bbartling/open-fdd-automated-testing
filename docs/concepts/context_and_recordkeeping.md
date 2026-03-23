@@ -1,3 +1,9 @@
+---
+title: Context and recordkeeping
+parent: Concepts
+nav_order: 2
+---
+
 # Context and Recordkeeping
 
 This repo is intended to preserve engineering context in visible files, not in private chat memory alone.
@@ -39,12 +45,12 @@ These should not live only in chat history:
 
 Humans should start here:
 
-- `docs/operational_states.md`
-- `docs/overnight_review.md`
-- `docs/bacnet_graph_context.md`
-- `docs/ai_pr_review_playbook.md`
-- `docs/testing_plan.md`
-- `docs/context_and_recordkeeping.md`
+- `docs/concepts/operational_states.md`
+- `docs/operations/overnight_review.md`
+- `docs/bacnet/graph_context.md`
+- `docs/appendix/ai_pr_review_playbook.md`
+- `docs/operations/testing_plan.md`
+- `docs/concepts/context_and_recordkeeping.md`
 
 ## Dashboard operation note
 

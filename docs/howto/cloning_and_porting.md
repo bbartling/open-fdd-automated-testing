@@ -1,3 +1,9 @@
+---
+title: Cloning and porting
+parent: How-to guides
+nav_order: 1
+---
+
 # Cloning and Porting
 
 This repo should be portable to another lab, another workstation, or another Open-FDD deployment with minimal conceptual changes.

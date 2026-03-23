@@ -1,3 +1,9 @@
+---
+title: AI PR review playbook
+parent: Appendix
+nav_order: 1
+---
+
 # AI PR Review Playbook
 
 This document describes how the automated testing and OpenClaw workflow should mimic the useful parts of CodeRabbit-style review without depending on a paid service.
