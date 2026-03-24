@@ -138,6 +138,7 @@ The right next step is to compare:
 - Open-FDD fault outputs and rolling-window expectations
 
 Future clones should use `scripts/monitor_fake_fault_schedule.py` instead of treating a raw spike as mysterious.
+The recurring integrity sweep and local dashboard summary should carry the schedule-aware interpretation forward so another machine can see whether a spike was expected without re-deriving the whole bench model from scratch.
 
 ## Recommended backup discipline
 

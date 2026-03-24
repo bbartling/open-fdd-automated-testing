@@ -171,6 +171,7 @@ One subtle but important rule on this bench:
 - a raw 180°F spike on a scheduled fake-device point is not automatically abnormal
 - first compare it to the shared UTC schedule in `fake_bacnet_devices/fault_schedule.py`
 - use `scripts/monitor_fake_fault_schedule.py` when possible so the sweep can distinguish expected fault injection from unscheduled drift
+- expose that interpretation in the dashboard / temporary local summary, not only in chat text
 - if 180°F appears **outside** the scheduled bounds window, classify that as a meaningful anomaly
 
 ### Future live HVAC mode

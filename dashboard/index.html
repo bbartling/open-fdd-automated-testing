@@ -178,6 +178,7 @@
     .endpoint-status.ok { color: var(--good); font-weight: 700; }
     .endpoint-status.warning { color: var(--warn); font-weight: 700; }
     .endpoint-status.fail { color: var(--bad); font-weight: 700; }
+    .endpoint-status.info { color: var(--accent); font-weight: 700; }
     @media (max-width: 1100px) {
       .span-8, .span-6, .span-4 { grid-column: span 12; }
       .metric-row { grid-template-columns: 1fr; }
@@ -340,7 +341,15 @@
         ),
         integrity: () => {
           const sweep = data?.integrity_sweep || {};
+          const schedule = sweep.schedule_monitor || {};
           const pillClass = sweep.overall_status === 'ok' ? 'ok' : (sweep.overall_status === 'fail' ? 'fail' : 'warning');
+          const statusClass = (status) => {
+            const s = String(status || '').toLowerCase();
+            if (s === 'pass' || s === 'ok' || s === '200') return 'ok';
+            if (s === 'fail') return 'fail';
+            if (s === 'info' || s === 'planned') return 'info';
+            return 'warning';
+          };
           return (
             <>
               <div className={`sweep-pill ${pillClass}`}>Last run: {sweep.last_run || 'unknown'} • {sweep.overall_status || 'unknown'} • Mode: {sweep.environment_mode || 'unknown'}</div>
@@ -354,6 +363,30 @@
                 <li><strong>Weather basis:</strong> {sweep.seasonal_context?.weather_basis || 'not set'}</li>
                 <li><strong>HVAC sanity summary:</strong> {sweep.seasonal_context?.hvac_sanity_summary || 'not set'}</li>
               </ul>
+              <h3>Schedule-aware fake fault monitor</h3>
+              <ul className="plain-list">
+                <li><strong>Last check:</strong> {schedule.last_check || 'not set'}</li>
+                <li><strong>UTC minute:</strong> {schedule.utc_minute ?? 'not set'}</li>
+                <li><strong>Expected mode:</strong> {schedule.expected_mode || 'not set'}</li>
+                <li><strong>Interpretation:</strong> {schedule.summary || 'not set'}</li>
+                <li><strong>Rule:</strong> {schedule.interpretation_rule || 'not set'}</li>
+              </ul>
+              <table className="endpoint-table">
+                <thead>
+                  <tr><th>Point</th><th>Device/Object</th><th>Observed</th><th>Expected</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                  {(schedule.points || []).map((pt, i) => (
+                    <tr key={i}>
+                      <td>{pt.point}</td>
+                      <td>{pt.device_instance}<div className="muted">{pt.object_identifier}</div></td>
+                      <td>{pt.second_value != null ? `${pt.first_value} → ${pt.second_value}` : String(pt.first_value)}</td>
+                      <td>{pt.expected_behavior || pt.mode || '—'}<div className="muted">{pt.note || ''}</div></td>
+                      <td className={`endpoint-status ${statusClass(pt.status)}`}>{pt.status || 'unknown'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
               <h3>Live sensor reads</h3>
               <table className="endpoint-table">
                 <thead>
@@ -365,7 +398,7 @@
                       <td>{sr.point}<div className="muted">{sr.property}</div></td>
                       <td>{sr.device_instance}<div className="muted">{sr.object_identifier}</div></td>
                       <td>{String(sr.value)}</td>
-                      <td className="endpoint-status ok">{sr.status}</td>
+                      <td className={`endpoint-status ${statusClass(sr.status)}`}>{sr.status}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -378,16 +411,13 @@
                   <tr><th>Endpoint</th><th>Status</th><th>Detail</th></tr>
                 </thead>
                 <tbody>
-                  {(sweep.endpoints || []).map((ep, i) => {
-                    const statusClass = ep.status === 'ok' || ep.status === '200' ? 'ok' : (ep.status === '401' ? 'warning' : 'warning');
-                    return (
-                      <tr key={i}>
-                        <td><div>{ep.name}</div><div className="muted">{ep.url}</div></td>
-                        <td className={`endpoint-status ${statusClass}`}>{ep.status}</td>
-                        <td>{ep.detail}</td>
-                      </tr>
-                    );
-                  })}
+                  {(sweep.endpoints || []).map((ep, i) => (
+                    <tr key={i}>
+                      <td><div>{ep.name}</div><div className="muted">{ep.url}</div></td>
+                      <td className={`endpoint-status ${statusClass(ep.status)}`}>{ep.status}</td>
+                      <td>{ep.detail}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
               <ul className="plain-list">{(sweep.findings || []).map((item, i) => <li key={i}>{item}</li>)}</ul>

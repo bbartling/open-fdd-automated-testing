@@ -84,6 +84,20 @@ The docs are organized to be useful to both human engineers and autonomous OpenC
 - [`sparql/24_operator_site_context.sparql`](sparql/24_operator_site_context.sparql)
 - [`docs/appendix/ai_pr_review_playbook.md`](docs/appendix/ai_pr_review_playbook.md)
 
+## Schedule-aware fake fault monitoring
+
+For the current Open-FDD fake BACnet bench, use:
+
+- `scripts/monitor_fake_fault_schedule.py`
+- `docs/howto/fake_fault_schedule_monitoring.md`
+
+This is the supported way to distinguish:
+- expected scheduled 180°F out-of-bounds injection
+- expected flatline windows
+- unscheduled anomalous spikes or schedule drift
+
+The local dashboard schema now has room for a `schedule_monitor` block under `integrity_sweep` so recurring sweeps can surface that interpretation instead of only showing raw point values.
+
 ## PDF build
 
 This repo now has its own docs PDF builder:
