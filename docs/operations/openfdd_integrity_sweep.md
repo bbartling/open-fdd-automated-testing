@@ -167,6 +167,12 @@ So the sweep should focus on:
 - expected device presence
 - whether the bench is trustworthy enough for the next overnight window
 
+One subtle but important rule on this bench:
+- a raw 180°F spike on a scheduled fake-device point is not automatically abnormal
+- first compare it to the shared UTC schedule in `fake_bacnet_devices/fault_schedule.py`
+- use `scripts/monitor_fake_fault_schedule.py` when possible so the sweep can distinguish expected fault injection from unscheduled drift
+- if 180°F appears **outside** the scheduled bounds window, classify that as a meaningful anomaly
+
 ### Future live HVAC mode
 If later used on a real HVAC system, add lightweight common-sense HVAC sanity checks.
 

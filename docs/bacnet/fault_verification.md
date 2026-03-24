@@ -68,6 +68,18 @@ The overnight process should increasingly automate the following:
 - compare Open-FDD fault outputs to expected rule behavior
 - write a durable report for the morning review
 
+## Important interpretation rule for the current fake bench
+
+Do not treat an out-of-bounds spike like `180.0` on `SA-T`, `RA-T`, `MA-T`, or `ZoneTemp` as an automatic product bug.
+
+On this bench that value is intentionally injected by the fake devices during the UTC out-of-bounds window defined in `fake_bacnet_devices/fault_schedule.py`.
+
+The right question is not simply:
+- "did a spike happen?"
+
+The right question is:
+- "did the spike happen in the scheduled UTC window, and did Open-FDD surface the expected `bad_sensor_flag` over the expected rolling window?"
+
 ## Minimum overnight report contents
 
 Every overnight BACnet verification report should include:

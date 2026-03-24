@@ -79,6 +79,7 @@ The docs are organized to be useful to both human engineers and autonomous OpenC
 - [`docs/operations/operator_framework.md`](docs/operations/operator_framework.md)
 - [`docs/operations/continuous_context_backup.md`](docs/operations/continuous_context_backup.md)
 - [`docs/howto/cloning_and_porting.md`](docs/howto/cloning_and_porting.md)
+- [`docs/howto/fake_fault_schedule_monitoring.md`](docs/howto/fake_fault_schedule_monitoring.md)
 - [`operator_framework.yaml`](operator_framework.yaml)
 - [`sparql/24_operator_site_context.sparql`](sparql/24_operator_site_context.sparql)
 - [`docs/appendix/ai_pr_review_playbook.md`](docs/appendix/ai_pr_review_playbook.md)

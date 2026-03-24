@@ -9,3 +9,4 @@ These pages explain setup and portability tasks.
 
 - [Cloning and porting](cloning_and_porting)
 - [OpenClaw subscription setup](openclaw_subscription_setup)
+- [Monitor the fake fault schedule](fake_fault_schedule_monitoring)

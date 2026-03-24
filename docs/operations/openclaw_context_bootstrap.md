@@ -120,6 +120,25 @@ The dashboard should reflect:
 - representative live sensor reads
 - action plan and findings
 
+### 9) Fake-device fault schedule context must be explicit
+On the current test bench, the fake BACnet devices intentionally inject deterministic faults.
+
+Important durable facts:
+- the shared schedule lives in `fake_bacnet_devices/fault_schedule.py`
+- schedule basis is **UTC minute-of-hour**, not process start time
+- UTC minutes `10-49` are the flatline window
+- UTC minutes `50-54` are the out-of-bounds window
+- the out-of-bounds marker is intentionally `180.0` on scheduled points
+
+That means a 180°F spike on points like `SA-T` or `ZoneTemp` is not automatically a product bug.
+The right next step is to compare:
+- current UTC minute
+- expected schedule mode from `fault_schedule.py`
+- live BACnet RPC reads
+- Open-FDD fault outputs and rolling-window expectations
+
+Future clones should use `scripts/monitor_fake_fault_schedule.py` instead of treating a raw spike as mysterious.
+
 ## Recommended backup discipline
 
 When local OpenClaw memory yields something future-you will need again:

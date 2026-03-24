@@ -59,6 +59,24 @@ Use this order on a fresh site:
 - fix auth/model/BACnet issues found there before trusting the overnight 12-hour run
 - only then move into recurring integrity sweeps and overnight review
 
+## Same-bench OpenClaw clone checklist
+
+If OpenClaw is cloned onto another machine for the **same current test bench**, the new clone should read these first:
+
+1. `README.md`
+2. `docs/operations/openclaw_context_bootstrap.md`
+3. `docs/operations/openfdd_integrity_sweep.md`
+4. `docs/bacnet/fault_verification.md`
+5. `fake_bacnet_devices/README.md`
+6. `docs/howto/fake_fault_schedule_monitoring.md`
+
+And it should know these durable facts immediately:
+- the fake devices intentionally inject faults on a **UTC** schedule
+- the 180°F spike is expected only during the shared out-of-bounds window
+- the correct way to judge that spike is to compare live BACnet RPC reads against `fake_bacnet_devices/fault_schedule.py`
+- the integrity sweep should classify graph drift, auth drift, BACnet drift, and product behavior separately
+- durable reasoning belongs in this repo, not only in local OpenClaw chat memory
+
 ## Portability goal
 
 A clone of this repo should make it easy for another engineer to answer:
