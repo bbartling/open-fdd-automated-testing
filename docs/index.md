@@ -72,6 +72,7 @@ The **committed** **`stack/caddy/Caddyfile`** already puts the **API and WebSock
 
 | Section | Description |
 |---------|--------------|
+| **Engine (PyPI)** | Library-only install, `RuleRunner`, column-map resolvers, rule YAML — **[bbartling.github.io/open-fdd](https://bbartling.github.io/open-fdd/)** |
 | [System Overview](overview) | Architecture, services, data flow |
 | [Modular Architecture](modular_architecture) | Collector/Model/Engine/Interface boundaries and mode-based bootstrap matrix. |
 | [Getting Started](getting_started) | Install, bootstrap, first run |

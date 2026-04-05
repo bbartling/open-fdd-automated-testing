@@ -12,7 +12,7 @@ This page describes a **single upload** workflow for mechanical engineers: send 
 
 > **Automated path available:** External OpenAI-compatible agents (for example Open‑Claw) can automate the same flow by calling `GET /data-model/export`, fetching platform documentation context from `GET /model-context/docs`, and then calling `PUT /data-model/import` with validated import JSON. The manual copy-paste workflow below always works too.
 
-> **Web-connected agents:** If your LLM can fetch HTTPS documentation, point it at the published **[Data modeling](https://bbartling.github.io/open-fdd/modeling/)** hub and this page’s template anchor **[Copy/paste prompt template (recommended)](https://bbartling.github.io/open-fdd/modeling/llm_workflow#copy-paste-prompt-template-recommended)** in addition to (or alongside) `GET /model-context/docs`, so instructions stay aligned with the live docs site.
+> **Web-connected agents:** If your LLM can fetch HTTPS documentation, point it at the published **[Data modeling](https://bbartling.github.io/open-fdd-afdd-stack/modeling/)** hub and this page’s template anchor **[Copy/paste prompt template (recommended)](https://bbartling.github.io/open-fdd-afdd-stack/modeling/llm_workflow#copy-paste-prompt-template-recommended)** in addition to (or alongside) `GET /model-context/docs`, so instructions stay aligned with the live docs site.
 
 > **Full AFDD stack vs column-map resolvers:** This workflow still targets **Brick** point classes (`brick_type`), **`rule_input`**, and related import fields because **rule YAML** on the platform uses **Brick-class logical names**. In **`fdd-loop`**, the default **`BrickTtlColumnMapResolver`** builds **`column_map`** from **`config/data_model.ttl`** (same semantic model you enrich with import JSON). The LLM does **not** emit a separate “ontology manifest” for PyPI-style **`ManifestColumnMapResolver`**—that path is for **library / custom** pipelines ([Engine-only deployment and external IoT pipelines](../howto/engine_only_iot), [column map resolver workshop](../../examples/column_map_resolver_workshop/README.md)). If you ever run the loop with a **manifest-only** resolver, keep **rule YAML** and **`brick_type`** aligned with whatever logical keys your rules use.
 
@@ -155,7 +155,7 @@ Do NOT use equipment_id or any UUID for equipment relationships.
   - **HVAC_Zone** — thermal / zoning context when points are zone-level only
   - **Building_Electrical_Meter** — building-level electrical meter equipment (not every kW sensor)
   - Generic fallback: **Equipment** (Open-FDD default) when class is unclear — better than mis-typing a VAV as a Chiller.
-- **Same names as the UI presets** are maintained in the frontend allowlist **`brick-1.4-query-class-allowlist.ts`** (regression test: **`data-model-testing-queries.brick.test.ts`**).
+- **Same names as the UI presets** are maintained in **[open-fdd-afdd-stack](https://github.com/bbartling/open-fdd-afdd-stack)** in [`frontend/src/data/brick-1.4-query-class-allowlist.ts`](https://github.com/bbartling/open-fdd-afdd-stack/blob/main/frontend/src/data/brick-1.4-query-class-allowlist.ts) (regression test: [`data-model-testing-queries.brick.test.ts`](https://github.com/bbartling/open-fdd-afdd-stack/blob/main/frontend/src/data/data-model-testing-queries.brick.test.ts)).
 - On **equipment[]** rows, include **equipment_type** whenever you include **equipment_name** + **site_id** so created/updated equipment gets the correct type before points attach.
 
 5. unit:
@@ -305,7 +305,7 @@ Now process the following input JSON:
 
 After the final line, paste the **export JSON** (or send it as the next user message). This template works for manual copy-paste and external agents (including Open‑Claw workflows).
 
-**Again, for agents with web access:** [Data modeling (GitHub Pages)](https://bbartling.github.io/open-fdd/modeling/) and [this template section](https://bbartling.github.io/open-fdd/modeling/llm_workflow#copy-paste-prompt-template-recommended).
+**Again, for agents with web access:** [Data modeling (GitHub Pages)](https://bbartling.github.io/open-fdd-afdd-stack/modeling/) and [this template section](https://bbartling.github.io/open-fdd-afdd-stack/modeling/llm_workflow#copy-paste-prompt-template-recommended).
 
 ---
 

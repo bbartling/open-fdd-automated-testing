@@ -6,6 +6,8 @@ has_children: true
 
 # How-to Guides
 
+Minimal **`pip install open-fdd`** workflows (no Docker) live on the **[engine docs site](https://bbartling.github.io/open-fdd/)** — [Getting started](https://bbartling.github.io/open-fdd/getting_started), [Column map & resolvers](https://bbartling.github.io/open-fdd/column_map_resolvers).
+
 - [MQTT integration (optional)](mqtt_integration) — Mosquitto profile, BACnet2MQTT vs experimental MQTT RPC gateway on diy-bacnet-server; links to upstream docs.
 - [Grafana dashboards (optional)](grafana_dashboards) — Optional Grafana; React frontend provides equivalent timeseries and fault views. Datasource and dashboard JSON.
 - [Grafana SQL cookbook](grafana_cookbook) — SQL recipes for BACnet, faults, weather, system resources (variables, panels, sparklines).

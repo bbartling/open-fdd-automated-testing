@@ -6,6 +6,8 @@ nav_order: 21
 
 # Engine-only deployment and external IoT pipelines
 
+> **Library-only (`pip install open-fdd`):** See the **[engine documentation](https://bbartling.github.io/open-fdd/)** — [Getting started](https://bbartling.github.io/open-fdd/getting_started), [Column map & resolvers](https://bbartling.github.io/open-fdd/column_map_resolvers), and [Engine-only & IoT](https://bbartling.github.io/open-fdd/howto/engine_only_iot) (same topics as below, scoped to pandas integrators).
+
 Some integrators already operate **data collection** (historians, MQTT, proprietary BAS exports) and **modeling / semantics** (warehouse schemas, optional Brick elsewhere). Open-FDD’s **`--mode engine`** and the **pandas YAML engine** let you add **FDD** without adopting the full stack.
 
 > **Package names:** The rules code lives under **`open_fdd.engine`**. The repo’s optional **`openfdd-engine`** package (**`openfdd_engine`**) is a thin re-export around the same API — not a different engine. See [The optional openfdd-engine package](openfdd_engine) for a comparison table and Docker vs library paths.

@@ -13,31 +13,74 @@
 
 </div>
 
-This repository is the **full on-prem AFDD platform**: Docker Compose, **FastAPI** data-model API, BACnet and weather scrapers, **FDD loop**, optional Grafana/Caddy, and the **React** dashboard. The **rules engine** is **not** vendored here — containers and this package install **`open-fdd` from [PyPI](https://pypi.org/project/open-fdd/)** (`open_fdd.engine`, YAML rules on pandas). Platform code lives under the Python package **`openfdd_stack.platform`**.
+Open-FDD is an open-source knowledge graph fault-detection platform for HVAC systems that helps facilities optimize their energy usage and cost-savings. Because it runs on-prem, facilities never have to worry about a vendor hiking prices, going dark, or walking away with their data. The platform is an AFDD stack designed to run inside the building, behind the firewall, under the owner’s control. It transforms operational data into actionable, cost-saving insights and provides a secure integration layer that any cloud platform can use without vendor lock-in. U.S. Department of Energy research reports median energy savings of roughly 8–9% from FDD programs—meaningful annual savings depending on facility size and energy spend.
+
+This repository is the **full on-prem AFDD platform**, which bootstraps entirely with Docker and runs the **rules engine** installed from **[`open-fdd` on PyPI](https://pypi.org/project/open-fdd/)**.
+
 
 ---
 
 ## Documentation
 
-- **This stack** (bootstrap, Compose, API, drivers, UI): **[GitHub Pages — open-fdd-afdd-stack](https://bbartling.github.io/open-fdd-afdd-stack/)** (built from `docs/` on push).
-- **Engine / PyPI library** (`RuleRunner`, rule YAML, pandas): **[open-fdd documentation](https://bbartling.github.io/open-fdd/)** — source [bbartling/open-fdd](https://github.com/bbartling/open-fdd), package [PyPI `open-fdd`](https://pypi.org/project/open-fdd/).
+- 📖 [**Stack documentation**](https://bbartling.github.io/open-fdd-afdd-stack/) — Bootstrap, Docker Compose, API, drivers, React UI (this repo’s `docs/` on push).
+- 📘 [**Engine documentation**](https://bbartling.github.io/open-fdd/) — `RuleRunner`, rule YAML, pandas; source [bbartling/open-fdd](https://github.com/bbartling/open-fdd), package [`open-fdd` on PyPI](https://pypi.org/project/open-fdd/).
+- 📕 [**Documentation PDF**](https://github.com/bbartling/open-fdd/blob/master/pdf/open-fdd-docs.pdf) — Offline / Kindle-friendly. Regenerate from this repo with `python3 scripts/build_docs_pdf.py` → `pdf/open-fdd-docs.pdf`.
+- ✨ [**LLM prompt (copy/paste template)**](https://bbartling.github.io/open-fdd-afdd-stack/modeling/llm_workflow#copy-paste-prompt-template-recommended) — Export the data model (knowledge graph) as JSON, run an **external** LLM-assisted tagging workflow, then re-import; the API parses JSON on import.
+- 🤖 [**Open‑Claw / external agents**](https://bbartling.github.io/open-fdd-afdd-stack/openclaw_integration) — `GET /model-context/docs`, `GET /mcp/manifest`, data-model export/import for your own OpenAI-compatible stack.
 
 ---
 
-## Quick start (Linux + Docker)
+## Quick Starts
 
-Prerequisites: **Docker** + **Docker Compose**, **Git**. Clone **this** repo (not only `open-fdd`).
+### Open-FDD Engine-only (rules engine, no Docker) PyPi
+
+If you only want the Python rules engine (without the full platform stack), you can use it in standard Python environments.
 
 ```bash
-git clone https://github.com/bbartling/open-fdd-afdd-stack.git
-cd open-fdd-afdd-stack
-chmod +x scripts/bootstrap.sh
-./scripts/bootstrap.sh --help
+pip install open-fdd
 ```
 
-Example HTTP bootstrap (see engine docs for BACnet addressing and auth notes):
+
+### Open-FDD AFDD Platform Manually by the Human
+
+Open-FDD uses Docker and Docker Compose to orchestrate and manage all platform services within a unified containerized environment. The bootstrap script (`./scripts/bootstrap.sh`) is **Linux-only** and intended for IoT edge applications using Docker exclusively.
+
+### Debian / Ubuntu setup
+
+- **Git:** Install Git if needed, e.g. `sudo apt update && sudo apt install git`.
+- **Docker:** Follow the official guide to install Docker Engine (and Compose): [Install Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/).
+
+### Prerequisites (Ubuntu / Debian-style)
+
+After Docker is installed, add your Linux user to the **`docker`** group so you can run `docker` without `sudo` (log out and back in, or use `newgrp`, for the group change to apply):
 
 ```bash
+sudo usermod -aG docker "$USER"
+newgrp docker
+docker ps
+```
+
+Create a Python virtual environment and install **`argon2-cffi`** (used to hash passwords for bootstrap):
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install argon2-cffi
+```
+
+Clone the repository:
+
+```bash
+git clone https://github.com/bbartling/open-fdd.git
+```
+
+### Standard HTTP bootstrap (no TLS) and app login
+
+The `--bacnet-address` value is the static bind address for BACnet, which is the usual setup for BACnet/IP on operations technology (OT) LANs. Bootstrap supports **dual-NIC** hosts: use this address on the OT interface; your other interface can use DHCP for outbound internet access.
+
+```bash
+cd open-fdd
+
 printf '%s' 'YourSecurePassword' | ./scripts/bootstrap.sh \
   --bacnet-address 192.168.204.16/24:47808 \
   --bacnet-instance 12345 \
@@ -45,18 +88,39 @@ printf '%s' 'YourSecurePassword' | ./scripts/bootstrap.sh \
   --password-stdin
 ```
 
-Compose file: **`stack/docker-compose.yml`**. API module path: **`openfdd_stack.platform.api.main:app`**. FDD loop: **`python -m openfdd_stack.platform.drivers.run_rule_loop`**.
+> **NOTE:** Both the DIY BACnet server and Open-FDD API in the **Standard HTTP bootstrap (no TLS)** configuration still require bearer tokens for authorization. These are defined in `open-fdd/stack/.env` and are set during the bootstrapping process.
+
+
+### Standard hardened stack — self-signed TLS (Caddy) and app login
+
+Open-FDD runs over TLS with self-signed certificates, and there is no access to the Open-FDD API or the DIY BACnet server Docker container APIs.
+
+
+```bash
+cd open-fdd
+
+printf '%s' 'YourSecurePassword' | ./scripts/bootstrap.sh \
+  --bacnet-address 192.168.204.16/24:47808 \
+  --bacnet-instance 12345 \
+  --user ben \
+  --password-stdin \
+  --caddy-self-signed
+```
+
+### Bootstrap Troubleshooting
+
+```bash
+./scripts/bootstrap.sh --doctor
+```
+
+Also available is the **partial stack** mode: `./scripts/bootstrap.sh --mode collector`, `--mode model`, or `--mode engine`. See the `Docs` below for more information.
 
 ---
 
 ## Python layout
 
-| Install | Role |
-|--------|------|
-| **`open-fdd`** (PyPI) | `open_fdd.engine`, `open_fdd.schema`, `open_fdd.reports` |
-| **`openfdd-afdd-stack`** (this repo, `pip install -e .`) | `openfdd_stack.platform` (API, DB loop, drivers) |
 
-Local development (co-developing engine + stack):
+Local development (co-developing engine + stack) and push to a new or existing development branch:
 
 ```bash
 python3 -m venv .venv
@@ -66,14 +130,6 @@ pip install -e "/path/to/open-fdd[dev]"
 pip install -e ".[dev]"
 pytest openfdd_stack/tests -v
 ```
-
-**Default / CI:** install only the stack package (`pip install -e ".[dev]"`). Dependencies resolve **`open-fdd` from PyPI** (version range in `pyproject.toml`). The CI workflow asserts `import open_fdd` loads from **`site-packages`**, matching production containers.
-
----
-
-## Images
-
-Same branding assets as the engine repo: `image.png`, `OpenFDD_system_pyramid.png`, schematics (see repo root).
 
 ---
 

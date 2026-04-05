@@ -43,7 +43,7 @@ This project expects everyone to be respectful and constructive. By participatin
 
 ## I Have a Question
 
-Before asking, please check the [documentation](https://bbartling.github.io/open-fdd/) and search [existing issues](https://github.com/bbartling/open-fdd/issues) to see if your question is already answered.
+Before asking, check **[this site’s docs](https://bbartling.github.io/open-fdd-afdd-stack/)** (platform) and the **[engine docs](https://bbartling.github.io/open-fdd/)** (`pip install open-fdd`), and search [stack issues](https://github.com/bbartling/open-fdd-afdd-stack/issues) / [engine issues](https://github.com/bbartling/open-fdd/issues).
 
 If you still need help:
 
@@ -70,7 +70,7 @@ When contributing, you agree that you have authored 100% of the content, have th
 ### Before submitting a bug report
 
 - Use the latest version (main branch or latest release).
-- Confirm the bug is in Open-FDD and not in your environment (e.g. wrong Python version, missing config). Check the [documentation](https://bbartling.github.io/open-fdd/) and [I Have a Question](#i-have-a-question) first.
+- Confirm the bug is in Open-FDD and not in your environment (e.g. wrong Python version, missing config). Check the [platform docs](https://bbartling.github.io/open-fdd-afdd-stack/) or [engine docs](https://bbartling.github.io/open-fdd/) and [I Have a Question](#i-have-a-question) first.
 - Search [issues](https://github.com/bbartling/open-fdd/issues?q=label%3Abug) to see if the bug is already reported.
 - Collect:
   - **Stack trace** (Traceback) if applicable
@@ -99,7 +99,7 @@ Enhancements are tracked as [GitHub issues](https://github.com/bbartling/open-fd
 
 ### Before submitting
 
-- Use the latest version and read the [documentation](https://bbartling.github.io/open-fdd/) to see if the behavior already exists or can be configured.
+- Use the latest version and read the [platform](https://bbartling.github.io/open-fdd-afdd-stack/) or [engine](https://bbartling.github.io/open-fdd/) documentation to see if the behavior already exists or can be configured.
 - Search [issues](https://github.com/bbartling/open-fdd/issues) to see if the enhancement was already suggested; if so, add to that discussion.
 - Consider whether the idea fits Open-FDD's scope (edge AFDD, rules, API, BACnet, Grafana). Make a clear case for why it would help most users.
 
@@ -141,7 +141,7 @@ To contribute a rule or cookbook change:
 
 ## Improving the Documentation
 
-Documentation lives in the `docs/` directory and is published at [bbartling.github.io/open-fdd](https://bbartling.github.io/open-fdd/) (Just the Docs theme). Improvements are welcome:
+Documentation for **this repo** lives in `docs/` and is published at **[bbartling.github.io/open-fdd-afdd-stack](https://bbartling.github.io/open-fdd-afdd-stack/)** (Just the Docs). The **`open-fdd`** engine docs are a **[separate site](https://bbartling.github.io/open-fdd/)**. Improvements are welcome:
 
 - Fix typos, clarify wording, or update steps.
 - Add examples or how-tos (e.g. for the [Expression Rule Cookbook](expression_rule_cookbook), [How-to Guides](howto/index), or BACnet).
