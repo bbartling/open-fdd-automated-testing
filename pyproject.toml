@@ -11,9 +11,24 @@ license = { text = "MIT" }
 requires-python = ">=3.9"
 authors = [{ name = "Ben Bartling", email = "ben.bartling@gmail.com" }]
 dependencies = [
-    # Engine + shared types/reports on PyPI; [platform] pulls API stack deps (FastAPI, DB drivers, etc.).
     # Pin to latest published engine on PyPI; bump lower bound after each open-fdd release.
-    "open-fdd[platform,brick,bacnet,monitoring]>=2.0.13",
+    "open-fdd>=2.0.13",
+    # Brick TTL → column_map (stack-only; not a dependency of the engine wheel).
+    "rdflib>=7.5.0,<8",
+    # rdflib 7.x + pyparsing 3.2+ can break SPARQL parsing; pin compatible range.
+    "pyparsing>=2.1.0,<3.2",
+    # Platform / API / drivers (previously pulled via removed open-fdd extras [platform], etc.).
+    "pydantic>=2.4,<3",
+    "pydantic-settings>=2.2,<3",
+    "psycopg2-binary>=2.9.9",
+    "fastapi>=0.115,<1",
+    "python-multipart>=0.0.9",
+    "uvicorn[standard]>=0.30",
+    "httpx>=0.27",
+    "requests>=2.31",
+    "PyJWT>=2.8,<3",
+    "argon2-cffi>=23.1",
+    "docker>=7.0,<8",
 ]
 
 [project.optional-dependencies]

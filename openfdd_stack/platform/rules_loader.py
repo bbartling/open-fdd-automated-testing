@@ -51,9 +51,9 @@ class HotReloadRules:
             self._hash = h
             self._rules = load_rules_from_dir(eff)
             try:
-                from open_fdd.engine.brick_resolver import (
-                    resolve_from_ttl,
+                from openfdd_stack.platform.brick_ttl_resolver import (
                     get_equipment_types_from_ttl,
+                    resolve_from_ttl,
                 )
 
                 ttl = eff.parent / "data" / "data_model.ttl"

@@ -1275,7 +1275,7 @@ def _run_sparql_on_ttl(ttl_content: str, query: str) -> list[dict]:
     except ImportError:
         raise HTTPException(
             503,
-            "rdflib required. Install: pip install open-fdd[brick]",
+            "rdflib required. Install stack dependencies (see openfdd-afdd-stack pyproject.toml).",
         ) from None
     g = Graph()
     try:

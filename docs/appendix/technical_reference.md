@@ -18,7 +18,7 @@ Developer and maintainer reference: directory layout, environment variables, uni
 ```
 open-fdd/
 ├── open_fdd/
-│   ├── engine/            # runner, checks, brick_resolver
+│   ├── engine/            # runner, checks (PyPI open-fdd)
 │   ├── reports/           # fault_viz, docx, fault_report
 │   ├── schema/            # FDD result/event (canonical)
 │   ├── platform/          # FastAPI, DB, drivers, loop
@@ -43,7 +43,7 @@ open-fdd/
 │   ├── bacnet_crud_smoke_test.py # Simple BACnet instance range + CRUD smoke test
 │   ├── trigger_fdd_run.py
 │   └── ...
-└── examples/              # cloud_export, brick_resolver, run_all_rules_brick, etc.
+└── examples/              # cloud_export, run_all_rules_brick, etc.
 ```
 
 **Front-end and database:** See [Developer guide](developer_guide) for Config UI development (no build step; edit `platform/static/` and refresh) and the full database schema (migrations 001–016, tables, cascade deletes).
@@ -101,7 +101,7 @@ Used to build the PUT /config body at bootstrap; thereafter config is in the gra
 
 Tests live under `open_fdd/tests/`. Run: `pytest open_fdd/tests/ -v`. All use in-process mocks; no shared DB or live API. For end-to-end (real API, optional BACnet): `python tools/graph_and_crud_test.py` (see [SPARQL cookbook](../modeling/sparql_cookbook)).
 
-- **engine/** — brick_resolver, runner, weather_rules
+- **engine/** (PyPI `open-fdd`) — runner, checks; Brick TTL map: **platform/brick_ttl_resolver**
 - **platform/** — bacnet_api, bacnet_brick, bacnet_driver, config, crud_api, data_model_api, data_model_ttl, download_api, graph_model, rules_loader, site_resolver
 - **test_schema.py** — FDD result/event to row
 

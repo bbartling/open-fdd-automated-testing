@@ -17,7 +17,7 @@ Scripts and sample data for **open-fdd** tutorials.
 | `my_rules/sensor_flatline.yaml` | Flatline rule config (your rules) |
 | `my_rules/sensor_bounds.yaml` | Bounds rule config (your rules) |
 | `data_model.ttl` | Data model TTL (Brick + optional BACnet) (optional) |
-| `brick_resolver.py` | Resolve column map from TTL |
+| (stack) `openfdd_stack.platform.brick_ttl_resolver` | Resolve column map from Brick TTL (`fdd-loop`) |
 
 ## Data
 

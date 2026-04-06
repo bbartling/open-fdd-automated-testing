@@ -80,7 +80,7 @@ git clone https://github.com/bbartling/open-fdd.git
 The `--bacnet-address` value is the static bind address for BACnet, which is the usual setup for BACnet/IP on operations technology (OT) LANs. Bootstrap supports **dual-NIC** hosts: use this address on the OT interface; your other interface can use DHCP for outbound internet access.
 
 ```bash
-cd open-fdd
+cd open-fdd-afdd-stack
 
 printf '%s' 'YourSecurePassword' | ./scripts/bootstrap.sh \
   --bacnet-address 192.168.204.16/24:47808 \
@@ -89,8 +89,7 @@ printf '%s' 'YourSecurePassword' | ./scripts/bootstrap.sh \
   --password-stdin
 ```
 
-> **NOTE:** Both the DIY BACnet server and Open-FDD API in the **Standard HTTP bootstrap (no TLS)** configuration still require bearer tokens for authorization. These are defined in `open-fdd/stack/.env` and are set during the bootstrapping process.
-
+**LAN / firewall / ports:** See [Standard HTTP lab: remote LAN access](https://bbartling.github.io/open-fdd-afdd-stack/getting_started#standard-http-lab-remote-lan-access) in the Stack Docs (bearer keys in `stack/.env`, `http://` vs `https://`, ports **80** / **8880** / **8000**, and automatic **ufw**).
 
 ### Standard hardened stack — self-signed TLS (Caddy) and app login
 
@@ -98,7 +97,7 @@ Open-FDD runs over TLS with self-signed certificates, and there is no access to 
 
 
 ```bash
-cd open-fdd
+cd open-fdd-afdd-stack
 
 printf '%s' 'YourSecurePassword' | ./scripts/bootstrap.sh \
   --bacnet-address 192.168.204.16/24:47808 \

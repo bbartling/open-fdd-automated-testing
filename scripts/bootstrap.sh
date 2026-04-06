@@ -23,9 +23,13 @@
 #   (Available services: api, bacnet-server, bacnet-scraper, caddy, db, fdd-loop, frontend, grafana [--with-grafana], host-stats, mosquitto [--with-mqtt-bridge], weather-scraper)
 #   ./scripts/bootstrap.sh --frontend          # before start: stop frontend, remove frontend node_modules volume (fresh npm install on next up)
 #
-# Frontend serving mode:
-#   Stack frontend runs a production build (npm run build + static serve), not Vite dev/HMR.
-#   Each frontend container start runs npm run build (dist is on the bind-mounted repo).
+# Frontend serving mode (no separate “frontend rebuild” workflow):
+#   Do not run npm on the host for the stack UI unless you prefer local dev (vite dev) outside Docker.
+#   Default ./scripts/bootstrap.sh starts openfdd_frontend, which runs npm ci if node_modules is empty,
+#   npm run build, then `vite preview` on dist (same Vite as package-lock; no floating npx static server).
+#   You do not need docker compose --build frontend for normal pulls: compose up rebuilds inside the container.
+#   Use --frontend only to wipe the frontend_node_modules volume after package.json / lockfile changes.
+#   Use --build frontend if you already use compose directly and want to force-recreate that service.
 #
 # Site maintenance (pull both repos, prune, rebuild, verify):
 #   ./scripts/bootstrap.sh --maintenance --update --verify
@@ -93,6 +97,8 @@ CADDY_TLS_CN="${CADDY_TLS_CN:-openfdd.local}"
 # Optional: written to stack/.env when passed (see --bacnet-* in --help)
 BACNET_DEVICE_INSTANCE_CLI=""
 BACNET_ADDRESS_CLI=""
+LAN_BIND=false
+NO_OPEN_FIREWALL=false
 RETENTION_DAYS=365
 LOG_MAX_SIZE="100m"
 LOG_MAX_FILES=3
@@ -197,6 +203,8 @@ while [[ $i -lt ${#args[@]} ]]; do
       fi
       BACNET_ADDRESS_CLI="${args[$i]}"
       ;;
+    --lan-bind) LAN_BIND=true ;;
+    --no-open-firewall) NO_OPEN_FIREWALL=true ;;
     -h|--help)
       cat <<EOF
 Usage: $0 [options]
@@ -244,6 +252,8 @@ Security:
   --caddy-self-signed       Self-signed TLS for Caddy (:443, :80→HTTPS); writes certs; stack/.env: OPENFDD_CADDYFILE, OFDD_TRUST_FORWARDED_PROTO=true, BACNET_SWAGGER_SERVERS_URL=/bacnet (HTTPS gateway UI at https://HOST/bacnet/docs)
   --caddy-tls-cn HOST       With --caddy-self-signed: certificate CN/SAN (default: openfdd.local)
   --caddy-http-only         Turn off self-signed Caddy mode (default HTTP Caddyfile on :80 only; OFDD_TRUST_FORWARDED_PROTO=false)
+  --lan-bind                HTTP lab only: set OFDD_API_HOST_BIND=0.0.0.0 and OFDD_FRONTEND_HOST_BIND=0.0.0.0 so other machines can reach :8000 / :5173 and Caddy :80 (ignored with --caddy-self-signed or active self-signed stack/.env).
+  --no-open-firewall        Skip automatic ufw allow for HTTP lab ports (80,8880,8000,8080,5173 tcp) when ufw is active and API bind is 0.0.0.0.
   --user NAME               Configure Phase-1 app login user (writes hash config into stack/.env).
   --password-file PATH      Read Phase-1 app password from file (first line).
   --password-stdin          Read Phase-1 app password from stdin.
@@ -803,6 +813,46 @@ env_file_set_kv() {
   fi
 }
 
+# Compose interpolates ${OPENFDD_CADDYFILE:-...} with shell env before stack/.env file values.
+# This script sources stack/.env early (RETENTION_*, etc.); keys removed later (e.g. disable_caddy_self_signed_config)
+# would otherwise stay exported and keep Caddy on Caddyfile.selfsigned + leave Swagger disabled.
+reload_stack_env_after_writes() {
+  local f="$STACK_DIR/.env"
+  local key
+  for key in OPENFDD_CADDYFILE BACNET_SWAGGER_SERVERS_URL; do
+    if [[ -f "$f" ]] && grep -qE "^${key}=" "$f" 2>/dev/null; then
+      :
+    else
+      unset "$key" 2>/dev/null || true
+    fi
+  done
+  if [[ ! -f "$f" ]]; then
+    return 0
+  fi
+  set +e
+  set -a
+  # shellcheck source=/dev/null
+  source "$f" 2>/dev/null
+  local env_source_rc=$?
+  set +a
+  set -e
+  if [[ $env_source_rc -ne 0 ]]; then
+    echo "Warning: could not fully parse $f after write_edge_env."
+  fi
+}
+
+# curl http://localhost:8000 often uses IPv6 (::1) first; Docker publishes host port on IPv4 only → false "unreachable".
+bootstrap_api_base_for_host_curl() {
+  local u="${OFDD_API_URL:-http://127.0.0.1:8000}"
+  u="${u%/}"
+  case "$u" in
+    http://localhost|http://localhost:*|https://localhost|https://localhost:*)
+      u="${u//localhost/127.0.0.1}"
+      ;;
+  esac
+  printf '%s' "$u"
+}
+
 # Swagger/OpenAPI on API :8000 and BACnet gateway :8080: enabled for standard HTTP; disabled when self-signed Caddy is active.
 sync_openapi_docs_env() {
   local f="$STACK_DIR/.env"
@@ -842,6 +892,119 @@ apply_bacnet_gateway_cli_to_env() {
       echo "Lab bind: OFDD_API_HOST_BIND=0.0.0.0 OFDD_FRONTEND_HOST_BIND=0.0.0.0 (use --caddy-self-signed for HTTPS + loopback-only API/frontend)"
       BOOTSTRAP_RECREATE_API_FRONTEND=true
     fi
+  fi
+}
+
+# Expose published Docker ports on all interfaces for remote/LAN HTTP (not for --caddy-self-signed lab).
+apply_lan_bind_cli_to_env() {
+  local f="$STACK_DIR/.env"
+  [[ -f "$f" ]] || touch "$f"
+  if ! $LAN_BIND; then
+    return 0
+  fi
+  if $CADDY_SELF_SIGNED; then
+    echo "Warning: --lan-bind ignored with --caddy-self-signed (use https://THIS_HOST/ for remote access through Caddy)."
+    return 0
+  fi
+  if grep -qE '^OPENFDD_CADDYFILE=.*Caddyfile\.selfsigned' "$f" 2>/dev/null; then
+    echo "Warning: --lan-bind skipped: stack/.env selects Caddyfile.selfsigned (remote UI/API via https://THIS_HOST/, not raw :8000 from LAN)."
+    return 0
+  fi
+  env_file_set_kv "$f" "OFDD_API_HOST_BIND" "0.0.0.0"
+  env_file_set_kv "$f" "OFDD_FRONTEND_HOST_BIND" "0.0.0.0"
+  echo "LAN/remote bind: OFDD_API_HOST_BIND=0.0.0.0 OFDD_FRONTEND_HOST_BIND=0.0.0.0 (http://SERVER_IP:8000 API, :80 and :8880 Caddy UI, :5173 frontend)"
+  BOOTSTRAP_RECREATE_API_FRONTEND=true
+}
+
+bootstrap_detect_lan_ipv4() {
+  local ip=""
+  # Prefer non-loopback addresses reported by the host (stable on typical edge/Linux installs).
+  if have_cmd hostname; then
+    ip="$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -Ev '^(127\.|169\.254\.|::)' | head -1)"
+  fi
+  if [[ -z "$ip" ]] && have_cmd ip; then
+    ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '/src/ { for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit } }')"
+    [[ "$ip" =~ ^127\. ]] && ip=""
+  fi
+  printf '%s' "$ip"
+}
+
+bootstrap_read_api_host_bind_from_env_file() {
+  local f="$STACK_DIR/.env"
+  local v=""
+  v="$(grep -E '^OFDD_API_HOST_BIND=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\r')"
+  v="${v//\'}"
+  v="${v//\"}"
+  printf '%s' "${v:-127.0.0.1}"
+}
+
+bootstrap_print_remote_access_hints() {
+  local bind ip
+  bind="$(bootstrap_read_api_host_bind_from_env_file)"
+  ip="$(bootstrap_detect_lan_ipv4)"
+  echo ""
+  if grep -qE '^OPENFDD_CADDYFILE=.*Caddyfile\.selfsigned' "$STACK_DIR/.env" 2>/dev/null; then
+    if [[ -n "$ip" ]]; then
+      echo "  Remote (TLS):  https://${ip}/  — API and UI through Caddy; raw :8000 is loopback-only on the server."
+    else
+      echo "  Remote (TLS):  https://THIS_HOST/  through Caddy; raw :8000 is loopback-only on the server."
+    fi
+    return 0
+  fi
+  if [[ "$bind" == "0.0.0.0" ]]; then
+    if [[ -n "$ip" ]]; then
+      echo "  Remote / LAN:  http://${ip}:8000/docs  (API Swagger)   http://${ip}/  and  http://${ip}:8880/  (UI via Caddy — same app; use :8880 if :80 is firewall-blocked)   http://${ip}:8080/  (BACnet gateway)"
+    else
+      echo "  Remote / LAN:  use this machine's IP — :8000 API, :80 or :8880 Caddy UI, :8080 BACnet. OFDD_API_HOST_BIND=0.0.0.0."
+    fi
+    echo "  If :80 never loads from other PCs but :8000 works, allow inbound 80 (e.g. sudo ufw allow 80/tcp) or use :8880 only."
+    echo "  Health checks on the server use 127.0.0.1 only; that address is not for other PCs on the network."
+  else
+    echo "  Remote access: API/UI are loopback-only (OFDD_API_HOST_BIND=${bind}). Re-run bootstrap with --lan-bind or --bacnet-address … (no --caddy-self-signed) so stack/.env gets 0.0.0.0 and api/frontend/caddy are recreated."
+  fi
+}
+
+# When HTTP lab publishes API on all interfaces, open common TCP ports in ufw (best effort; needs passwordless sudo or user runs printed command).
+bootstrap_maybe_open_ufw_http_lab() {
+  if $NO_OPEN_FIREWALL; then
+    return 0
+  fi
+  [[ "$(uname -s)" == "Linux" ]] || return 0
+  local f="$STACK_DIR/.env"
+  if grep -qE '^OPENFDD_CADDYFILE=.*Caddyfile\.selfsigned' "$f" 2>/dev/null; then
+    return 0
+  fi
+  local bind
+  bind="$(bootstrap_read_api_host_bind_from_env_file)"
+  [[ "$bind" == "0.0.0.0" ]] || return 0
+  if ! have_cmd ufw; then
+    return 0
+  fi
+  if ! ufw status 2>/dev/null | head -1 | grep -qiE '^Status:[[:space:]]+active([^a-z]|$)'; then
+    return 0
+  fi
+  if ! sudo -n true 2>/dev/null; then
+    echo ""
+    echo "=== Firewall (ufw is active) ==="
+    echo "Passwordless sudo is not available; allow remote HTTP lab ports yourself, then re-run from another PC:"
+    echo "  sudo ufw allow 80/tcp comment 'Open-FDD Caddy' && sudo ufw allow 8880/tcp comment 'Open-FDD Caddy alt' \\"
+    echo "    && sudo ufw allow 8000/tcp comment 'Open-FDD API' && sudo ufw allow 8080/tcp comment 'Open-FDD BACnet' \\"
+    echo "    && sudo ufw allow 5173/tcp comment 'Open-FDD frontend'"
+    echo "Or tighten source: sudo ufw allow from 192.168.0.0/16 to any port 80,8880,8000,8080,5173 proto tcp"
+    return 0
+  fi
+  local p any_added=0
+  for p in 80 8880 8000 8080 5173; do
+    if sudo -n ufw status 2>/dev/null | grep -qE "^${p}/tcp[[:space:]]+ALLOW"; then
+      continue
+    fi
+    if sudo -n ufw allow "${p}/tcp" comment 'Open-FDD HTTP lab' 2>/dev/null || sudo -n ufw allow "${p}/tcp" 2>/dev/null; then
+      echo "Firewall (ufw): allowed ${p}/tcp (Open-FDD HTTP lab)."
+      any_added=1
+    fi
+  done
+  if [[ "$any_added" -eq 1 ]]; then
+    echo "Firewall (ufw): run 'sudo ufw reload' if connections still fail until rules apply."
   fi
 }
 
@@ -1098,16 +1261,16 @@ verify() {
     echo "BACnet: http://localhost:8080 (not reachable or no response after 5 tries)"
   fi
 
-  if curl_retry 5 10 http://localhost:8000/health; then
-    echo "API:    http://localhost:8000 (OK — /health responded)"
+  if curl_retry 5 10 http://127.0.0.1:8000/health; then
+    echo "API:    http://127.0.0.1:8000 (OK — /health responded)"
   else
-    echo "API:    http://localhost:8000 (not reachable after 5 tries; run full stack without --minimal)"
+    echo "API:    http://127.0.0.1:8000 (not reachable after 5 tries; run full stack without --minimal)"
   fi
 
   echo ""
   echo "=== Weather data check (GET /sites, /points, POST /download/csv) ==="
   if [[ -x "$REPO_ROOT/scripts/curl_weather_data.sh" ]]; then
-    if (cd "$REPO_ROOT" && ./scripts/curl_weather_data.sh http://localhost:8000 >/dev/null 2>&1); then
+    if (cd "$REPO_ROOT" && ./scripts/curl_weather_data.sh http://127.0.0.1:8000 >/dev/null 2>&1); then
       echo "Weather: OK (Open-Meteo points present for site; Web weather page will show charts)."
     else
       echo "Weather: no Open-Meteo points yet (run FDD or weather scraper; Config → open_meteo_site_id = your site name)."
@@ -1124,6 +1287,18 @@ verify() {
       echo "Caddy: https://localhost/ not responding yet (stack still starting or port 443 blocked)"
     fi
     verify_tls_caddy_smoke
+  else
+    echo "=== Caddy (HTTP UI) ==="
+    if curl_retry 2 3 -sf "http://127.0.0.1:80/" >/dev/null 2>&1; then
+      echo "Caddy: http://127.0.0.1:80/ (UI proxy OK)"
+    else
+      echo "Caddy: http://127.0.0.1:80/ not responding on this host"
+    fi
+    if curl_retry 2 3 -sf "http://127.0.0.1:8880/" >/dev/null 2>&1; then
+      echo "Caddy: http://127.0.0.1:8880/ (same UI as :80 — use from LAN if inbound :80 is firewall-blocked)"
+    else
+      echo "Caddy: http://127.0.0.1:8880/ not responding"
+    fi
   fi
   echo ""
 }
@@ -1345,14 +1520,13 @@ run_verify_code_matrix_or_single() {
 }
 
 wait_for_api() {
-  API_BASE="${OFDD_API_URL:-http://localhost:8000}"
-  API_BASE="${API_BASE%/}"
+  API_BASE="$(bootstrap_api_base_for_host_curl)"
 
-  echo "=== Waiting for API at $API_BASE (~60s) ==="
+  echo "=== Waiting for API at $API_BASE (~90s) — probe from this host only ==="
   local try=1
-  while [[ $try -le 30 ]]; do
+  while [[ $try -le 45 ]]; do
     if curl -sf --connect-timeout 3 "$API_BASE/health" >/dev/null 2>&1; then
-      echo "API ready."
+      echo "API ready (loopback probe OK; remote clients use your server LAN IP when OFDD_API_HOST_BIND=0.0.0.0 — see summary below)."
       return 0
     fi
     sleep 2
@@ -1372,8 +1546,7 @@ seed_config_via_api() {
   echo "=== Seeding STACK config (PUT /config) ==="
   local curl_auth=()
   [[ -n "${OFDD_API_KEY:-}" ]] && curl_auth=(-H "Authorization: Bearer $OFDD_API_KEY")
-  API_BASE="${OFDD_API_URL:-http://localhost:8000}"
-  API_BASE="${API_BASE%/}"
+  API_BASE="$(bootstrap_api_base_for_host_curl)"
 
   # If we already have sites, set open_meteo_site_id to the first site's name so weather goes there (Web weather page).
   local open_meteo_site_id_override=""
@@ -1581,20 +1754,14 @@ elif [[ -n "${BACNET_ADDRESS_CLI:-}" ]]; then
   disable_caddy_self_signed_config
 fi
 
+apply_lan_bind_cli_to_env
+
 sync_openapi_docs_env
 
-# Reload stack/.env so OFDD_API_KEY (and others) are available for seed_config_via_api and compose
-if [[ -f "$STACK_DIR/.env" ]]; then
-  set +e
-  set -a
-  source "$STACK_DIR/.env" 2>/dev/null
-  env_source_rc=$?
-  set +a
-  set -e
-  if [[ $env_source_rc -ne 0 ]]; then
-    echo "Warning: could not fully parse $STACK_DIR/.env after write_edge_env."
-  fi
-fi
+# Reload stack/.env so OFDD_API_KEY (and others) are available for seed_config_via_api and compose.
+reload_stack_env_after_writes
+
+bootstrap_maybe_open_ufw_http_lab
 
 check_prereqs
 ensure_diy_bacnet_sibling
@@ -1711,7 +1878,8 @@ if $UPDATE_PULL_REBUILD; then
 
   echo ""
   echo "=== Update complete ==="
-  echo "  DB data retained. API: http://localhost:8000  BACnet: http://localhost:8080"
+  echo "  DB data retained. API (this host): http://127.0.0.1:8000  BACnet: http://127.0.0.1:8080"
+  bootstrap_print_remote_access_hints
   if $VERIFY_ONLY; then
     echo ""
     verify
@@ -1844,25 +2012,24 @@ if [[ "$MODE" == "collector" ]]; then
   echo "  (Collector mode: raw BACnet data path. No API/FDD unless explicitly started.)"
 elif [[ "$MODE" == "model" ]]; then
   if grep -qE '^OFDD_ENABLE_OPENAPI_DOCS=true' "$STACK_DIR/.env" 2>/dev/null; then
-    echo "  API:      http://localhost:8000   (Swagger/OpenAPI: /docs)"
+    echo "  API:      http://127.0.0.1:8000   (Swagger/OpenAPI: /docs — on this host only)"
   else
-    echo "  API:      http://localhost:8000   (Swagger/OpenAPI: off — self-signed TLS mode)"
+    echo "  API:      http://127.0.0.1:8000   (Swagger/OpenAPI: off — self-signed TLS mode)"
   fi
-  echo "  Frontend: http://localhost:5173   (or via Caddy http://localhost)"
-  if grep -qE '^OPENFDD_CADDYFILE=.*Caddyfile\.selfsigned' "$STACK_DIR/.env" 2>/dev/null; then
-    echo "  Self-signed TLS: use https://localhost/ for the UI (not :5173 alone). OpenAPI UIs stay off; use the web app and BACnet tools in-app."
-  fi
+  echo "  Frontend: http://127.0.0.1:5173   (or via Caddy http://127.0.0.1)"
+  bootstrap_print_remote_access_hints
   echo "  (Model mode: knowledge graph and CRUD workflows.)"
 elif [[ "$MODE" == "engine" ]]; then
   echo "  (Engine mode: FDD and weather loops with DB. No API/frontend by default.)"
 else
   if grep -qE '^OFDD_ENABLE_OPENAPI_DOCS=true' "$STACK_DIR/.env" 2>/dev/null; then
-    echo "  API:      http://localhost:8000   (Swagger/OpenAPI: /docs)"
+    echo "  API:      http://127.0.0.1:8000   (Swagger/OpenAPI: /docs — on this host only)"
   else
-    echo "  API:      http://localhost:8000   (Swagger/OpenAPI: off — self-signed TLS mode)"
+    echo "  API:      http://127.0.0.1:8000   (Swagger/OpenAPI: off — self-signed TLS mode)"
   fi
-  echo "  Frontend: http://localhost:5173   (or via Caddy http://localhost)"
-  echo "  BACnet:   http://localhost:8080   (gateway; operators use web UI → BACnet tools)"
+  echo "  Frontend: http://127.0.0.1:5173   (or via Caddy http://127.0.0.1)"
+  echo "  BACnet:   http://127.0.0.1:8080   (gateway; operators use web UI → BACnet tools)"
+  bootstrap_print_remote_access_hints
   if grep -qE '^OPENFDD_CADDYFILE=.*Caddyfile\.selfsigned' "$STACK_DIR/.env" 2>/dev/null; then
     echo ""
     echo "  Self-signed TLS: open the app at https://localhost/ (or https://THIS_HOST/) — not :5173 alone."

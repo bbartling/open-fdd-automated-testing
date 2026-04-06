@@ -4,7 +4,7 @@ set -euo pipefail
 # Verifies weather points are available for at least one site.
 # Exit 0 when weather points exist; non-zero otherwise.
 
-API_BASE="${1:-http://localhost:8000}"
+API_BASE="${1:-http://127.0.0.1:8000}"
 API_BASE="${API_BASE%/}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

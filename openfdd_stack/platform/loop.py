@@ -233,12 +233,14 @@ def run_fdd_loop(
     Runs all rules (sensor + weather) against site-level data.
 
     ``column_map_resolver``: optional :class:`~open_fdd.engine.column_map_resolver.ColumnMapResolver`.
-    Default is :class:`~open_fdd.engine.column_map_resolver.BrickTtlColumnMapResolver` (Brick TTL),
+    Default is :class:`~openfdd_stack.platform.brick_ttl_resolver.BrickTtlColumnMapResolver` (Brick TTL),
     matching historical behavior. The Docker ``fdd-loop`` entrypoint does not pass this; it uses the default.
     """
-    from open_fdd.engine.brick_resolver import get_equipment_types_from_ttl
-    from open_fdd.engine.column_map_resolver import BrickTtlColumnMapResolver
     from open_fdd.engine.runner import RuleRunner, load_rules_from_dir
+    from openfdd_stack.platform.brick_ttl_resolver import (
+        BrickTtlColumnMapResolver,
+        get_equipment_types_from_ttl,
+    )
 
     settings = get_platform_settings()
     lookback = lookback_days if lookback_days is not None else settings.lookback_days

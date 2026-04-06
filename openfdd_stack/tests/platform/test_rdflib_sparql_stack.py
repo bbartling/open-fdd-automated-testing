@@ -5,10 +5,9 @@ Broken rdflib / pyparsing combos can surface as::
 
     Param.postParse2() missing 1 required positional argument: 'tokenList'
 
-on POST /data-model/sparql (typically **pyparsing 3.2+** with **rdflib 7.x**). Open-FDD pins
-``pyparsing>=2.1.0,<3.2`` next to rdflib in ``pyproject.toml`` (brick/dev/test extras).
-Pytest runs this on ``./scripts/bootstrap.sh --test`` so the same install as
-``pip install -e ".[platform,brick]"`` (API image) is exercised.
+on POST /data-model/sparql (typically **pyparsing 3.2+** with **rdflib 7.x**). This repo pins
+``pyparsing>=2.1.0,<3.2`` next to **rdflib** in ``openfdd-afdd-stack`` ``pyproject.toml``.
+Pytest runs this on ``./scripts/bootstrap.sh --test`` so the API image install is exercised.
 
 Queries mirror patterns from ``scripts/automated_testing/sparql/`` (COUNT, PREFIX,
 OPTIONAL, wildcard predicate, GROUP BY).

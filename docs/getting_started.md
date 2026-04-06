@@ -151,6 +151,37 @@ To **update** an existing clone: `git pull` then `./scripts/bootstrap.sh`, or `.
 
 ---
 
+## Standard HTTP lab: remote LAN access
+{: #standard-http-lab-remote-lan-access}
+
+These notes apply when you use **standard HTTP bootstrap** (no **`--caddy-self-signed`**) and want to open the UI or API from **another machine on the LAN** (for example after the root [README](../README.md) one-liner with **`--bacnet-address`** and **`--user`**).
+
+### Bearer tokens
+
+The DIY BACnet gateway and Open-FDD API still require **Bearer** tokens for most operations. Values are defined in **`stack/.env`** and are set during bootstrap. See the table **[Bearer tokens and API keys](#bearer-tokens-and-api-keys-stackenv)** above.
+
+### Web UI URL (no TLS)
+
+Open the app with **`http://`** on port **80** (Caddy), for example `http://192.168.204.16/`. **`https://`** is only for the **hardened** stack (**`--caddy-self-signed`**). The default **`stack/caddy/Caddyfile`** does not terminate TLS on **443** for this profile, so **`https://192.168.204.16/`** is not the lab UI.
+
+### Remote API from another PC
+
+Bootstrap waits for the API using **`http://127.0.0.1:8000`** on the **server only** (reliable loopback probe; avoids IPv6 **`localhost`** quirks). That address is **not** what other PCs should use.
+
+For **Swagger or REST on port 8000** from another machine, **`stack/.env`** must include **`OFDD_API_HOST_BIND=0.0.0.0`** so Docker publishes **`0.0.0.0:8000`**. Bootstrap sets that automatically when you use **`--bacnet-address …`** without **`--caddy-self-signed`**. If you are **not** using **`--bacnet-address`**, add **`--lan-bind`** to the same bootstrap command (HTTP lab only).
+
+Open the host firewall for **80**, **8000**, **8080** (and **5173** if you need the raw frontend port) as needed.
+
+### Remote UI when port 80 is blocked
+
+The stack also publishes **host port 8880** mapped to the **same** Caddy HTTP site as port **80**. If Swagger on **`http://EDGE_IP:8000/docs`** works from your laptop but **`http://EDGE_IP/`** does not, the firewall may allow **8000/tcp** but not **80/tcp**. Use **`http://EDGE_IP:8880/`** or allow **80/tcp** (e.g. **`sudo ufw allow 80/tcp`**). Use an explicit **`http://`** URL if the browser tries **https://** on **443** and fails.
+
+### Automatic `ufw` rules (Ubuntu / Debian)
+
+When **ufw** is **active** and the stack is in **HTTP lab** mode with **`OFDD_API_HOST_BIND=0.0.0.0`**, **`./scripts/bootstrap.sh`** attempts **`sudo ufw allow`** for **80, 8880, 8000, 8080, 5173/tcp** if **passwordless sudo** works (**`sudo -n`**). Otherwise it prints the exact commands to run. Pass **`--no-open-firewall`** to skip that behavior.
+
+---
+
 ## After bootstrap
 
 - **Grafana (if you used `--with-grafana`):** Open http://localhost:3000. A TimescaleDB datasource is provisioned (`openfdd_timescale`); build dashboards with the [Grafana SQL cookbook](howto/grafana_cookbook). If provisioning is wrong, run `./scripts/bootstrap.sh --reset-grafana` (keeps DB data).

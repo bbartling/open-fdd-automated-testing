@@ -14,7 +14,7 @@ This page explains how the **in-repo** package **`packages/openfdd-engine/`** (P
 
 ## Re-exports only — no duplicated types
 
-**`openfdd_engine` does not define its own rule engine, Pydantic models, or resolver types.** The shim **`__init__.py`** imports from **`open_fdd.engine`** (e.g. **`RuleRunner`**, **`resolve_from_ttl`**, **`BrickTtlColumnMapResolver`**, **`ColumnMapResolver`**) and lists them in **`__all__`**. Any new public API should be added **once** under **`open_fdd.engine`**; the shim only gains new names via **import + re-export**.
+**`openfdd_engine` does not define its own rule engine, Pydantic models, or resolver types.** The shim **`__init__.py`** imports from **`open_fdd.engine`** (e.g. **`RuleRunner`**, **`ManifestColumnMapResolver`**, **`ColumnMapResolver`**) and lists them in **`__all__`**. Brick TTL mapping lives in **`openfdd_stack.platform.brick_ttl_resolver`** (stack repo). Any new public engine API should be added **once** under **`open_fdd.engine`**; the shim only gains new names via **import + re-export**.
 
 - **Why:** One source of truth for PyPI **`open-fdd`** and optional **`openfdd-engine`**; no drift between packages.
 - **Versioning:** **`open-fdd`** on PyPI is authoritative; **`openfdd-engine`** pins **`open-fdd>=…`** in its **`pyproject.toml`** when published.
@@ -45,8 +45,7 @@ pip install open-fdd
 
 ```python
 from open_fdd.engine.runner import RuleRunner, load_rule, load_rules_from_dir
-# brick resolution in-platform / with extras:
-from open_fdd.engine.brick_resolver import ...
+from open_fdd.engine.column_map_resolver import load_column_map_manifest
 ```
 
 **Optional `openfdd-engine` distribution** — use only if you **intentionally** want:
@@ -57,8 +56,6 @@ from open_fdd.engine.brick_resolver import ...
 ```bash
 cd packages/openfdd-engine
 pip install -e .
-# optional TTL helpers:
-pip install -e ".[brick]"
 ```
 
 ```python
@@ -66,9 +63,9 @@ from openfdd_engine import (
     RuleRunner,
     load_rule,
     bounds_map_from_rule,
-    resolve_from_ttl,
-    BrickTtlColumnMapResolver,
     ColumnMapResolver,
+    ManifestColumnMapResolver,
+    load_column_map_manifest,
 )
 ```
 
@@ -85,7 +82,7 @@ In Docker, **`fdd-loop`** runs:
 That driver:
 
 1. Optionally refreshes Open-Meteo for the lookback window.  
-2. Calls **`run_fdd_loop()`** in **`openfdd_stack.platform.loop`**, which loads YAML from **`rules_dir`**, loads timeseries from Postgres, builds **`column_map`** via **`BrickTtlColumnMapResolver`** (Brick TTL — same as historical behavior) from **`config/data_model.ttl`**, and constructs **`RuleRunner`** from **`open_fdd.engine.runner`**. Advanced use: pass **`column_map_resolver=...`** into **`run_fdd_loop`** to swap mapping logic; the default stack does not. Library helpers in **`open_fdd.engine.column_map_resolver`**: **`ManifestColumnMapResolver`**, **`FirstWinsCompositeResolver`**, **`load_column_map_manifest`** (also re-exported from **`openfdd_engine`**).  
+2. Calls **`run_fdd_loop()`** in **`openfdd_stack.platform.loop`**, which loads YAML from **`rules_dir`**, loads timeseries from Postgres, builds **`column_map`** via **`BrickTtlColumnMapResolver`** in **`openfdd_stack.platform.brick_ttl_resolver`** from **`config/data_model.ttl`**, and constructs **`RuleRunner`** from **`open_fdd.engine.runner`**. Advanced use: pass **`column_map_resolver=...`** into **`run_fdd_loop`** to swap mapping logic; the default stack does not. Manifest-style helpers live in **`open_fdd.engine.column_map_resolver`**: **`ManifestColumnMapResolver`**, **`FirstWinsCompositeResolver`**, **`load_column_map_manifest`** (also re-exported from **`openfdd_engine`**).  
 3. Writes results to **`fault_results`** (and run log for Grafana).
 
 So: **same YAML and same `RuleRunner` semantics** as a standalone script; the platform adds **DB, schedule, TTL, and weather**.
