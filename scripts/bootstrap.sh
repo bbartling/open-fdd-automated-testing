@@ -939,24 +939,31 @@ bootstrap_read_api_host_bind_from_env_file() {
 }
 
 bootstrap_print_remote_access_hints() {
-  local bind ip
+  local bind ip caddyfile
   bind="$(bootstrap_read_api_host_bind_from_env_file)"
   ip="$(bootstrap_detect_lan_ipv4)"
+  caddyfile="$(grep -E '^OPENFDD_CADDYFILE=' "$STACK_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\r')"
+  caddyfile="${caddyfile//\'/}"
+  caddyfile="${caddyfile//\"/}"
   echo ""
-  if grep -qE '^OPENFDD_CADDYFILE=.*Caddyfile\.selfsigned' "$STACK_DIR/.env" 2>/dev/null; then
+  if [[ "$caddyfile" == *Caddyfile.selfsigned ]]; then
+    echo "  Edge mode:    self-signed TLS Caddy"
     if [[ -n "$ip" ]]; then
-      echo "  Remote (TLS):  https://${ip}/  — API and UI through Caddy; raw :8000 is loopback-only on the server."
+      echo "  Remote (TLS): https://${ip}/  — API and UI through Caddy; raw :8000 is loopback-only on the server."
     else
-      echo "  Remote (TLS):  https://THIS_HOST/  through Caddy; raw :8000 is loopback-only on the server."
+      echo "  Remote (TLS): https://THIS_HOST/  through Caddy; raw :8000 is loopback-only on the server."
     fi
+    echo "  If https://THIS_HOST/ does not work, check: docker logs openfdd_caddy ; ss -ltnp | grep ':443 ' ; ufw status"
     return 0
   fi
+  echo "  Edge mode:    standard HTTP Caddy"
   if [[ "$bind" == "0.0.0.0" ]]; then
     if [[ -n "$ip" ]]; then
-      echo "  Remote / LAN:  http://${ip}:8000/docs  (API Swagger)   http://${ip}/  and  http://${ip}:8880/  (UI via Caddy — same app; use :8880 if :80 is firewall-blocked)   http://${ip}:8080/  (BACnet gateway)"
+      echo "  Remote / LAN: http://${ip}:8000/docs  (API Swagger)   http://${ip}/  and  http://${ip}:8880/  (UI via Caddy — same app; use :8880 if :80 is firewall-blocked)   http://${ip}:8080/  (BACnet gateway)"
     else
-      echo "  Remote / LAN:  use this machine's IP — :8000 API, :80 or :8880 Caddy UI, :8080 BACnet. OFDD_API_HOST_BIND=0.0.0.0."
+      echo "  Remote / LAN: use this machine's IP — :8000 API, :80 or :8880 Caddy UI, :8080 BACnet. OFDD_API_HOST_BIND=0.0.0.0."
     fi
+    echo "  HTTPS is not expected in this mode unless you ran --caddy-self-signed."
     echo "  If :80 never loads from other PCs but :8000 works, allow inbound 80 (e.g. sudo ufw allow 80/tcp) or use :8880 only."
     echo "  Health checks on the server use 127.0.0.1 only; that address is not for other PCs on the network."
   else
@@ -1017,11 +1024,11 @@ disable_caddy_self_signed_config() {
   else
     sed_i=(-i "")
   fi
-  sed "${sed_i[@]}" "/^OPENFDD_CADDYFILE=/d" "$env_file" 2>/dev/null || true
+  env_file_set_kv "$env_file" "OPENFDD_CADDYFILE" "./caddy/Caddyfile"
   sed "${sed_i[@]}" "/^BACNET_SWAGGER_SERVERS_URL=/d" "$env_file" 2>/dev/null || true
   env_file_set_kv "$env_file" "OFDD_TRUST_FORWARDED_PROTO" "false"
   BOOTSTRAP_RECREATE_CADDY=true
-  echo "Caddy: reverted to default HTTP-only entry (removed OPENFDD_CADDYFILE; OFDD_TRUST_FORWARDED_PROTO=false; removed BACNET_SWAGGER_SERVERS_URL if present)."
+  echo "Caddy: set explicit HTTP-only entry (OPENFDD_CADDYFILE=./caddy/Caddyfile; OFDD_TRUST_FORWARDED_PROTO=false; removed BACNET_SWAGGER_SERVERS_URL if present)."
 }
 
 ensure_caddy_self_signed_tls() {
