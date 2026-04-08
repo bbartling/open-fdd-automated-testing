@@ -16,7 +16,7 @@
 #   ./scripts/bootstrap.sh --install-docker     # attempt Docker install (Linux) then run
 #   ./scripts/bootstrap.sh --minimal            # DB + bacnet-server + bacnet-scraper only (add --with-grafana for Grafana)
 #   ./scripts/bootstrap.sh --verify             # health checks only
-#   ./scripts/bootstrap.sh --test             # run tests: frontend (lint + typecheck + vitest), backend (pytest), Caddy validate; then exit. Does not run E2E/Selenium or long-running tests.
+#   ./scripts/bootstrap.sh --test             # run tests: frontend (lint + typecheck + vitest), backend (pytest), Caddy validate; then exit. Does not run E2E/Selenium or long-running tests. Docker optional (skips Caddy validate if unavailable). OFDD_BOOTSTRAP_INSTALL_DEV=1 can auto-create .venv + pip install -e '.[dev]'.
 #   ./scripts/bootstrap.sh --update             # git pull this repo + diy-bacnet-server sibling, rebuild, restart (keeps DB)
 #   ./scripts/bootstrap.sh --maintenance        # safe prune only (NO volumes)
 #   ./scripts/bootstrap.sh --build api ...      # rebuild and restart only selected services
@@ -68,6 +68,8 @@ STACK_DIR="$REPO_ROOT/stack"
 # -----------------------------
 VERIFY_ONLY=false
 VERIFY_CODE=false
+# Set by check_prereqs_for_test_mode when docker is missing or unusable (Caddy validate skipped).
+SKIP_DOCKER_FOR_TESTS=0
 MINIMAL=false
 MODE="full"
 MODE_EXPLICIT=false
@@ -219,7 +221,7 @@ Core:
   --doctor                  Read-only diagnostics: Docker, Compose, Python, argon2-cffi, paths (no stack changes). Exit 1 if critical checks fail.
   --verify                  Show running services + health checks (exits before starting stack)
   --verify --test           Verify services then run tests; then exit
-  --test                    Run tests only: frontend (lint + typecheck + vitest), backend (pytest), Caddy validate; then exit (no E2E/Selenium)
+  --test                    Run tests only: frontend (lint + typecheck + vitest), backend (pytest), Caddy validate; then exit (no E2E/Selenium). Docker is optional (Caddy validate skipped if unavailable). Env OFDD_BOOTSTRAP_INSTALL_DEV=1 auto-creates .venv and pip install -e '.[dev]' when pytest is missing.
   --update                  Git pull this AFDD stack repo + diy-bacnet-server (sibling), rebuild, restart (keeps DB)
   --force-rebuild           With --update: always docker compose build (refreshes unpinned pip deps e.g. bacpypes3 even if git unchanged)
   --maintenance             Safe Docker prune only (NO volumes)
@@ -419,6 +421,39 @@ check_prereqs() {
     echo "Diagnostics: $0 --doctor"
     exit 1
   fi
+}
+
+# For ./scripts/bootstrap.sh --test only: do not require Docker (pytest / npm can run on the host).
+# Docker is still used when present for Caddyfile validation and optional frontend container.
+check_prereqs_for_test_mode() {
+  SKIP_DOCKER_FOR_TESTS=0
+  if ! have_cmd docker; then
+    echo "=== Note: Docker not in PATH — skipping Caddyfile validation; frontend container path unavailable ==="
+    SKIP_DOCKER_FOR_TESTS=1
+    return 0
+  fi
+  if ! docker ps >/dev/null 2>&1; then
+    echo "=== Note: Docker daemon not usable — skipping Caddyfile validation; frontend container path unavailable ==="
+    echo "         Fix: sudo usermod -aG docker \$USER && newgrp docker   (or start Docker Desktop)"
+    SKIP_DOCKER_FOR_TESTS=1
+    return 0
+  fi
+}
+
+# Optional: OFDD_BOOTSTRAP_INSTALL_DEV=1 with --test creates .venv and pip install -e ".[dev]" when pytest is missing.
+maybe_install_test_dev_deps() {
+  [[ "${OFDD_BOOTSTRAP_INSTALL_DEV:-}" == "1" ]] || return 0
+  if [[ -x "$REPO_ROOT/.venv/bin/python" ]] && "$REPO_ROOT/.venv/bin/python" -m pytest --version >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "=== OFDD_BOOTSTRAP_INSTALL_DEV=1: creating $REPO_ROOT/.venv and pip install -e '.[dev]' ==="
+  if ! have_cmd python3; then
+    echo "python3 not found; cannot auto-install dev deps."
+    exit 1
+  fi
+  python3 -m venv "$REPO_ROOT/.venv"
+  "$REPO_ROOT/.venv/bin/pip" install -U pip
+  (cd "$REPO_ROOT" && "$REPO_ROOT/.venv/bin/pip" install -e ".[dev]") || exit 1
 }
 
 # stack/.env Phase-1 keys (doctor argon2 gate + browser stack later in this script).
@@ -1336,6 +1371,7 @@ ensure_docs_text_and_rag_index() {
 # Backend runs with OFDD_API_KEY unset so tests use no-auth app.
 verify_code() {
   local failed=0
+  maybe_install_test_dev_deps
   echo "=== Tests for mode '$MODE': frontend (lint + typecheck + vitest), backend (pytest), Caddy ==="
   echo ""
 
@@ -1431,6 +1467,10 @@ verify_code() {
 
   # Caddy is validated only when interface layer is expected.
   if [[ "$MODE" != "collector" && "$MODE" != "engine" ]]; then
+  if [[ "$SKIP_DOCKER_FOR_TESTS" -eq 1 ]]; then
+    echo "--- Caddy: skip (Docker not available — run with Docker to validate Caddyfiles) ---"
+    echo ""
+  else
   echo "--- Caddy (validate Caddyfile) ---"
   if docker run --rm -v "$STACK_DIR/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2 caddy validate --config /etc/caddy/Caddyfile; then
     echo "Caddy: OK (default Caddyfile)"
@@ -1458,6 +1498,7 @@ verify_code() {
     rm -rf "$tmpc"
   fi
   echo ""
+  fi
   fi
 
   if [[ $failed -eq 0 ]]; then
@@ -1727,7 +1768,7 @@ if $VERIFY_ONLY && ! $UPDATE_PULL_REBUILD; then
 fi
 
 if $VERIFY_CODE; then
-  check_prereqs
+  check_prereqs_for_test_mode
   run_verify_code_matrix_or_single || exit 1
   run_optional_diy_bacnet_tests || exit 1
   exit 0

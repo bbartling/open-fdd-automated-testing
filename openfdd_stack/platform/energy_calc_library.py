@@ -132,6 +132,247 @@ CALC_TYPE_SPECS: dict[str, dict[str, Any]] = {
             },
         ],
     },
+    # --- Penalty catalog / GL36-style extensions ---------------------------------
+    "ahu_sat_sensible_waste": {
+        "label": "AHU SAT waste (sensible cooling)",
+        "summary": "BTU/h ≈ 1.08 × CFM × (SAT_opt − SAT_actual); kWh at COP.",
+        "category": "airside_thermal",
+        "fields": [
+            {"key": "cfm", "label": "Supply airflow (CFM)", "type": "float", "min": 0},
+            {"key": "sat_opt_f", "label": "SAT optimal (°F)", "type": "float"},
+            {"key": "sat_actual_f", "label": "SAT actual (°F)", "type": "float"},
+            {"key": "hours", "label": "Hours in fault", "type": "float", "min": 0},
+            {"key": "cop", "label": "Cooling COP", "type": "float", "min": 0.1, "default": 3.5},
+            {
+                "key": "electric_rate_per_kwh",
+                "label": "Electric rate ($/kWh)",
+                "type": "float",
+                "min": 0,
+                "default": 0.12,
+            },
+        ],
+    },
+    "pressure_ratio_motor_kw": {
+        "label": "Fan or pump — pressure ratio waste",
+        "summary": "ΔkW ≈ kW_act × (1 − (P_opt/P_act)^1.5).",
+        "category": "vfd_affinity",
+        "fields": [
+            {"key": "kw_actual", "label": "Motor kW (actual)", "type": "float", "min": 0},
+            {"key": "p_actual", "label": "Pressure / DP actual", "type": "float", "min": 0.001},
+            {"key": "p_opt", "label": "Pressure / DP optimal", "type": "float", "min": 0},
+            {"key": "hours", "label": "Hours", "type": "float", "min": 0},
+            {
+                "key": "electric_rate_per_kwh",
+                "label": "Electric rate ($/kWh)",
+                "type": "float",
+                "min": 0,
+                "default": 0.12,
+            },
+        ],
+    },
+    "sensible_coil_leak_kw": {
+        "label": "Coil leak — sensible BTU to compressor kW",
+        "summary": "BTU/h ≈ 1.08 × CFM × ΔT_coil; kWh = BTU×h/(3412×COP).",
+        "category": "airside_thermal",
+        "fields": [
+            {"key": "cfm", "label": "Airflow (CFM)", "type": "float", "min": 0},
+            {"key": "delta_t_coil_f", "label": "ΔT across coil (°F)", "type": "float", "min": 0},
+            {"key": "hours", "label": "Hours", "type": "float", "min": 0},
+            {"key": "cop", "label": "Cooling COP", "type": "float", "min": 0.1, "default": 3.5},
+            {
+                "key": "electric_rate_per_kwh",
+                "label": "Electric rate ($/kWh)",
+                "type": "float",
+                "min": 0,
+                "default": 0.12,
+            },
+        ],
+    },
+    "fan_filter_dp_kw": {
+        "label": "Filter/coil — extra fan kW (inWC)",
+        "summary": "kW ≈ CFM × ΔP / (6356 η_fan η_motor) × 0.746.",
+        "category": "electric_runtime",
+        "fields": [
+            {"key": "cfm", "label": "Airflow (CFM)", "type": "float", "min": 0},
+            {"key": "delta_p_excess_inwc", "label": "Excess ΔP (in w.c.)", "type": "float", "min": 0},
+            {"key": "eta_fan", "label": "Fan efficiency (0–1)", "type": "float", "min": 0.01, "max": 1, "default": 0.65},
+            {"key": "eta_motor", "label": "Motor efficiency (0–1)", "type": "float", "min": 0.01, "max": 1, "default": 0.92},
+            {"key": "hours", "label": "Hours", "type": "float", "min": 0},
+            {
+                "key": "electric_rate_per_kwh",
+                "label": "Electric rate ($/kWh)",
+                "type": "float",
+                "min": 0,
+                "default": 0.12,
+            },
+        ],
+    },
+    "missed_economizer_cooling": {
+        "label": "Missed economizer (sensible)",
+        "summary": "Q ≈ 1.08 × CFM × (T_return − T_outside); kWh at COP.",
+        "category": "airside_thermal",
+        "fields": [
+            {"key": "cfm", "label": "Mixed / supply airflow (CFM)", "type": "float", "min": 0},
+            {"key": "t_return_f", "label": "Return air (°F)", "type": "float"},
+            {"key": "t_outside_f", "label": "Outside air (°F)", "type": "float"},
+            {"key": "hours", "label": "Hours", "type": "float", "min": 0},
+            {"key": "cop", "label": "Cooling COP", "type": "float", "min": 0.1, "default": 3.5},
+            {
+                "key": "electric_rate_per_kwh",
+                "label": "Electric rate ($/kWh)",
+                "type": "float",
+                "min": 0,
+                "default": 0.12,
+            },
+        ],
+    },
+    "enthalpy_wheel_proxy": {
+        "label": "ERV wheel deficit (enthalpy proxy)",
+        "summary": "BTU/h ≈ 4.5 × CFM_OA × Δh (h in BTU/lb).",
+        "category": "airside_thermal",
+        "fields": [
+            {"key": "cfm_oa", "label": "Outside air CFM", "type": "float", "min": 0},
+            {"key": "delta_h_ft_lb_per_lb", "label": "Δh (BTU/lb)", "type": "float", "min": 0},
+            {"key": "hours", "label": "Hours", "type": "float", "min": 0},
+            {"key": "cop", "label": "Cooling COP (if cooling)", "type": "float", "min": 0.1, "default": 3.5},
+            {
+                "key": "electric_rate_per_kwh",
+                "label": "Electric rate ($/kWh)",
+                "type": "float",
+                "min": 0,
+                "default": 0.12,
+            },
+        ],
+    },
+    "zone_simultaneous_sensible": {
+        "label": "Zone simultaneous heat + cool (sensible)",
+        "summary": "Annualizes opposing BTU/h streams to $ (electric COP vs gas η).",
+        "category": "airside_thermal",
+        "fields": [
+            {"key": "cfm", "label": "Zone airflow (CFM)", "type": "float", "min": 0},
+            {"key": "q_cool_btu_h", "label": "Cooling delivered (BTU/h)", "type": "float", "min": 0},
+            {"key": "q_heat_btu_h", "label": "Heating delivered (BTU/h)", "type": "float", "min": 0},
+            {"key": "hours", "label": "Hours hunting", "type": "float", "min": 0},
+            {"key": "cop", "label": "Cooling COP", "type": "float", "min": 0.1, "default": 3.5},
+            {"key": "heating_efficiency", "label": "Heating η (gas)", "type": "float", "min": 0.01, "max": 1, "default": 0.8},
+            {
+                "key": "electric_rate_per_kwh",
+                "label": "Electric rate ($/kWh)",
+                "type": "float",
+                "min": 0,
+                "default": 0.12,
+            },
+            {"key": "therm_rate_usd", "label": "Gas rate ($/therm)", "type": "float", "min": 0, "default": 1.0},
+            {
+                "key": "assign_cooling_to",
+                "label": "Cooling fuel",
+                "type": "enum",
+                "options": ["electric", "gas"],
+                "default": "electric",
+            },
+        ],
+    },
+    "vav_min_flow_reheat": {
+        "label": "VAV min flow — reheat waste",
+        "summary": "BTU/h ≈ 1.08 × ΔCFM × (T_zone − T_supply); therms at η.",
+        "category": "airside_thermal",
+        "fields": [
+            {"key": "cfm_excess", "label": "CFM above minimum", "type": "float", "min": 0},
+            {"key": "delta_t_f", "label": "|T_zone − T_supply| (°F)", "type": "float", "min": 0},
+            {"key": "hours", "label": "Hours", "type": "float", "min": 0},
+            {"key": "heating_efficiency", "label": "Reheat η", "type": "float", "min": 0.01, "max": 1, "default": 0.8},
+            {"key": "therm_rate_usd", "label": "Gas rate ($/therm)", "type": "float", "min": 0, "default": 1.0},
+        ],
+    },
+    "plant_minimum_stack_kw": {
+        "label": "Plant minimum kW stack",
+        "summary": "E = kW_stack × hours (chiller + pumps at minimum).",
+        "category": "electric_runtime",
+        "fields": [
+            {"key": "kw_stack", "label": "Combined minimum kW", "type": "float", "min": 0},
+            {"key": "hours", "label": "Hours", "type": "float", "min": 0},
+            {
+                "key": "electric_rate_per_kwh",
+                "label": "Electric rate ($/kWh)",
+                "type": "float",
+                "min": 0,
+                "default": 0.12,
+            },
+        ],
+    },
+    "boiler_standby_mix": {
+        "label": "Boiler / HW standby",
+        "summary": "Pump kWh + boiler min firing (therms).",
+        "category": "hydronic_waste",
+        "fields": [
+            {"key": "kw_hw_pump", "label": "HW pump kW", "type": "float", "min": 0},
+            {"key": "boiler_min_btu_h", "label": "Boiler minimum firing (BTU/h)", "type": "float", "min": 0},
+            {"key": "hours", "label": "Hours", "type": "float", "min": 0},
+            {"key": "boiler_efficiency", "label": "Combustion η", "type": "float", "min": 0.01, "max": 1, "default": 0.8},
+            {"key": "therm_rate_usd", "label": "Gas rate ($/therm)", "type": "float", "min": 0, "default": 1.0},
+            {
+                "key": "electric_rate_per_kwh",
+                "label": "Electric rate ($/kWh)",
+                "type": "float",
+                "min": 0,
+                "default": 0.12,
+            },
+        ],
+    },
+    "short_cycle_financial": {
+        "label": "Short-cycle financial proxy",
+        "summary": "$(extra starts) × wear + 10% of energy cost.",
+        "category": "electric_runtime",
+        "fields": [
+            {"key": "starts_per_hour", "label": "Starts per hour", "type": "float", "min": 0},
+            {"key": "allowed_starts_per_hour", "label": "Allowed starts/hour", "type": "float", "min": 0, "default": 6},
+            {"key": "cost_wear_usd_per_start", "label": "$ per excess start", "type": "float", "min": 0, "default": 25},
+            {"key": "kwh_in_period", "label": "kWh over analysis window", "type": "float", "min": 0},
+            {
+                "key": "electric_rate_per_kwh",
+                "label": "Electric rate ($/kWh)",
+                "type": "float",
+                "min": 0,
+                "default": 0.12,
+            },
+        ],
+    },
+    "chwst_reset_penalty_kw": {
+        "label": "CHWST reset penalty (rule-of-thumb)",
+        "summary": "kW_waste ≈ kW_act × 0.015 × (CHWST_opt − CHWST_act) per °F.",
+        "category": "electric_runtime",
+        "fields": [
+            {"key": "kw_actual", "label": "Chiller kW (actual)", "type": "float", "min": 0},
+            {"key": "chwst_opt_f", "label": "CHWST optimal (°F)", "type": "float"},
+            {"key": "chwst_actual_f", "label": "CHWST actual (°F)", "type": "float"},
+            {"key": "hours", "label": "Hours", "type": "float", "min": 0},
+            {
+                "key": "electric_rate_per_kwh",
+                "label": "Electric rate ($/kWh)",
+                "type": "float",
+                "min": 0,
+                "default": 0.12,
+            },
+        ],
+    },
+    "cop_gap_electric": {
+        "label": "COP gap — extra compressor kW",
+        "summary": "kW_waste = Q × (1/(3.412×COP_a) − 1/(3.412×COP_d)).",
+        "category": "electric_runtime",
+        "fields": [
+            {"key": "q_load_btu_h", "label": "Load (BTU/h)", "type": "float", "min": 0},
+            {"key": "cop_actual", "label": "COP actual", "type": "float", "min": 0.1, "default": 4.0},
+            {"key": "cop_design", "label": "COP design", "type": "float", "min": 0.1, "default": 6.0},
+            {"key": "hours", "label": "Hours", "type": "float", "min": 0},
+            {
+                "key": "electric_rate_per_kwh",
+                "label": "Electric rate ($/kWh)",
+                "type": "float",
+                "min": 0,
+                "default": 0.12,
+            },
+        ],
+    },
 }
 
 ALLOWED_CALC_TYPES = frozenset(CALC_TYPE_SPECS.keys())
@@ -146,11 +387,18 @@ def _f(params: dict[str, Any], key: str, default: Optional[float] = None) -> Opt
         return None
 
 
+def _v(params: dict[str, Any], key: str, default: Optional[Any] = None) -> Optional[Any]:
+    """Raw parameter lookup for non-numeric fields (e.g. enum string ids)."""
+    if key not in params or params[key] is None or params[key] == "":
+        return default
+    return params[key]
+
+
 def _missing_required(spec: dict[str, Any], params: dict[str, Any]) -> list[str]:
     missing: list[str] = []
     for f in spec.get("fields") or []:
         if f.get("type") == "enum":
-            if _f(params, f["key"], None) is None and f.get("default") is None:
+            if _v(params, f["key"], None) is None and f.get("default") is None:
                 missing.append(f["key"])
             continue
         v = _f(params, f["key"], None)
@@ -283,6 +531,178 @@ def preview_energy_calc(calc_type: str, parameters: dict[str, Any]) -> dict[str,
         kwh = (w / 1000.0) * h
         cost = kwh * rate
         peak_kw = w / 1000.0
+    elif calc_type == "ahu_sat_sensible_waste":
+        cfm = _f(params, "cfm", 0) or 0
+        sat_o = _f(params, "sat_opt_f", 0) or 0
+        sat_a = _f(params, "sat_actual_f", 0) or 0
+        h = _f(params, "hours", 0) or 0
+        cop = _f(params, "cop", 3.5) or 3.5
+        rate = _f(params, "electric_rate_per_kwh", 0) or 0
+        d_sat = max(0.0, sat_o - sat_a)
+        btuh = 1.08 * cfm * d_sat
+        btu_tot = btuh * h
+        kwh = btu_tot / (3412.0 * max(cop, 1e-6))
+        cost = kwh * rate
+        out["annual_mmbtu_saved"] = (btu_tot / 1_000_000.0) if btu_tot else None
+    elif calc_type == "pressure_ratio_motor_kw":
+        kw_a = _f(params, "kw_actual", 0) or 0
+        p_a = _f(params, "p_actual", 0) or 0
+        p_o = _f(params, "p_opt", 0) or 0
+        h = _f(params, "hours", 0) or 0
+        rate = _f(params, "electric_rate_per_kwh", 0) or 0
+        ratio = (p_o / max(p_a, 1e-9)) ** 1.5
+        ratio = min(ratio, 1.0)
+        kw_w = max(0.0, kw_a * (1.0 - ratio))
+        kwh = kw_w * h
+        cost = kwh * rate
+        peak_kw = kw_w
+    elif calc_type == "sensible_coil_leak_kw":
+        cfm = _f(params, "cfm", 0) or 0
+        dt = _f(params, "delta_t_coil_f", 0) or 0
+        h = _f(params, "hours", 0) or 0
+        cop = _f(params, "cop", 3.5) or 3.5
+        rate = _f(params, "electric_rate_per_kwh", 0) or 0
+        btuh = 1.08 * cfm * dt
+        btu_tot = btuh * h
+        kwh = btu_tot / (3412.0 * max(cop, 1e-6))
+        cost = kwh * rate
+        out["annual_mmbtu_saved"] = (btu_tot / 1_000_000.0) if btu_tot else None
+    elif calc_type == "fan_filter_dp_kw":
+        cfm = _f(params, "cfm", 0) or 0
+        dp = _f(params, "delta_p_excess_inwc", 0) or 0
+        ef = _f(params, "eta_fan", 0.65) or 0.65
+        em = _f(params, "eta_motor", 0.92) or 0.92
+        h = _f(params, "hours", 0) or 0
+        rate = _f(params, "electric_rate_per_kwh", 0) or 0
+        kw_fan = (cfm * dp) / (6356.0 * max(ef, 1e-6) * max(em, 1e-6)) * 0.746
+        kwh = max(0.0, kw_fan) * h
+        cost = kwh * rate
+        peak_kw = max(0.0, kw_fan)
+    elif calc_type == "missed_economizer_cooling":
+        cfm = _f(params, "cfm", 0) or 0
+        tr = _f(params, "t_return_f", 0) or 0
+        toa = _f(params, "t_outside_f", 0) or 0
+        h = _f(params, "hours", 0) or 0
+        cop = _f(params, "cop", 3.5) or 3.5
+        rate = _f(params, "electric_rate_per_kwh", 0) or 0
+        dt = max(0.0, tr - toa)
+        btuh = 1.08 * cfm * dt
+        btu_tot = btuh * h
+        kwh = btu_tot / (3412.0 * max(cop, 1e-6))
+        cost = kwh * rate
+        out["annual_mmbtu_saved"] = (btu_tot / 1_000_000.0) if btu_tot else None
+    elif calc_type == "enthalpy_wheel_proxy":
+        cfm = _f(params, "cfm_oa", 0) or 0
+        dh = _f(params, "delta_h_ft_lb_per_lb", 0) or 0
+        h = _f(params, "hours", 0) or 0
+        cop = _f(params, "cop", 3.5) or 3.5
+        rate = _f(params, "electric_rate_per_kwh", 0) or 0
+        btuh = 4.5 * cfm * dh
+        btu_tot = btuh * h
+        kwh = btu_tot / (3412.0 * max(cop, 1e-6))
+        cost = kwh * rate
+        out["annual_mmbtu_saved"] = (btu_tot / 1_000_000.0) if btu_tot else None
+    elif calc_type == "zone_simultaneous_sensible":
+        qc = _f(params, "q_cool_btu_h", 0) or 0
+        qh = _f(params, "q_heat_btu_h", 0) or 0
+        h = _f(params, "hours", 0) or 0
+        cop = _f(params, "cop", 3.5) or 3.5
+        heff = _f(params, "heating_efficiency", 0.8) or 0.8
+        er = _f(params, "electric_rate_per_kwh", 0) or 0
+        tr = _f(params, "therm_rate_usd", 0) or 0
+        assign = str(params.get("assign_cooling_to") or "electric")
+        btu_tot = (qc + qh) * h
+        out["annual_mmbtu_saved"] = (btu_tot / 1_000_000.0) if btu_tot else None
+        kwh_c = (qc * h) / (3412.0 * max(cop, 1e-6)) if assign == "electric" else 0.0
+        therms_h = ((qh * h) / (100_000.0 * max(heff, 1e-6))) if qh else 0.0
+        cost = kwh_c * er + therms_h * tr
+        kwh = kwh_c if kwh_c else None
+        therms = therms_h if therms_h else None
+        if assign == "gas":
+            kwh = None
+        out["annual_kwh_saved"] = round(kwh, 4) if kwh else None
+        out["annual_therms_saved"] = round(therms, 6) if therms else None
+        out["annual_cost_saved_usd"] = round(cost, 2) if cost else None
+        out["confidence_score"] = 2
+        return out
+    elif calc_type == "vav_min_flow_reheat":
+        cfm = _f(params, "cfm_excess", 0) or 0
+        dt = _f(params, "delta_t_f", 0) or 0
+        h = _f(params, "hours", 0) or 0
+        eta = _f(params, "heating_efficiency", 0.8) or 0.8
+        trt = _f(params, "therm_rate_usd", 0) or 0
+        btuh = 1.08 * cfm * dt
+        btu_tot = btuh * h
+        th = btu_tot / (100_000.0 * max(eta, 1e-6))
+        therms = th
+        cost = th * trt
+        out["annual_mmbtu_saved"] = (btu_tot / 1_000_000.0) if btu_tot else None
+        out["annual_kwh_saved"] = None
+        out["annual_therms_saved"] = round(therms, 6) if therms else None
+        out["annual_cost_saved_usd"] = round(cost, 2) if cost else None
+        out["confidence_score"] = 3
+        return out
+    elif calc_type == "plant_minimum_stack_kw":
+        kws = _f(params, "kw_stack", 0) or 0
+        h = _f(params, "hours", 0) or 0
+        rate = _f(params, "electric_rate_per_kwh", 0) or 0
+        kwh = kws * h
+        cost = kwh * rate
+        peak_kw = kws
+    elif calc_type == "boiler_standby_mix":
+        kw_p = _f(params, "kw_hw_pump", 0) or 0
+        bmin = _f(params, "boiler_min_btu_h", 0) or 0
+        h = _f(params, "hours", 0) or 0
+        eta = _f(params, "boiler_efficiency", 0.8) or 0.8
+        tr_therm = _f(params, "therm_rate_usd", 0) or 0
+        er = _f(params, "electric_rate_per_kwh", 0) or 0
+        kwh = kw_p * h
+        th = (bmin * h) / (100_000.0 * max(eta, 1e-6))
+        cost = kwh * er + th * tr_therm
+        therms = th
+        out["annual_kwh_saved"] = round(kwh, 4) if kwh else None
+        out["annual_therms_saved"] = round(therms, 6) if therms else None
+        out["annual_cost_saved_usd"] = round(cost, 2) if cost else None
+        out["confidence_score"] = 2
+        return out
+    elif calc_type == "short_cycle_financial":
+        sph = _f(params, "starts_per_hour", 0) or 0
+        allow = _f(params, "allowed_starts_per_hour", 6) or 6
+        cw = _f(params, "cost_wear_usd_per_start", 25) or 25
+        ek = _f(params, "kwh_in_period", 0) or 0
+        er = _f(params, "electric_rate_per_kwh", 0) or 0
+        extra = max(0.0, sph - allow)
+        wear = extra * cw
+        energy_pen = ek * er * 0.10
+        cost = wear + energy_pen
+        out["annual_cost_saved_usd"] = round(cost, 2) if cost else None
+        out["annual_kwh_saved"] = None
+        out["annual_therms_saved"] = None
+        out["confidence_score"] = 1
+        return out
+    elif calc_type == "chwst_reset_penalty_kw":
+        kwa = _f(params, "kw_actual", 0) or 0
+        t_o = _f(params, "chwst_opt_f", 0) or 0
+        t_a = _f(params, "chwst_actual_f", 0) or 0
+        h = _f(params, "hours", 0) or 0
+        rate = _f(params, "electric_rate_per_kwh", 0) or 0
+        dt = max(0.0, t_o - t_a)
+        kw_w = kwa * 0.015 * dt
+        kwh = max(0.0, kw_w) * h
+        cost = kwh * rate
+        peak_kw = max(0.0, kw_w)
+    elif calc_type == "cop_gap_electric":
+        q = _f(params, "q_load_btu_h", 0) or 0
+        ca = _f(params, "cop_actual", 4.0) or 4.0
+        cd = _f(params, "cop_design", 6.0) or 6.0
+        h = _f(params, "hours", 0) or 0
+        rate = _f(params, "electric_rate_per_kwh", 0) or 0
+        kw_a = q / (3412.0 * max(ca, 1e-6))
+        kw_d = q / (3412.0 * max(cd, 1e-6))
+        kw_w = max(0.0, kw_a - kw_d)
+        kwh = kw_w * h
+        cost = kwh * rate
+        peak_kw = kw_w
 
     if not math.isfinite(kwh):
         kwh = 0.0

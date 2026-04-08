@@ -317,3 +317,30 @@ def test_build_ttl_includes_energy_calculation():
     assert "oa_heat_1" in ttl
     assert "oa_heating_sensible" in ttl
     assert "brick:isPartOf" in ttl
+
+
+def test_build_ttl_energy_calc_includes_penalty_catalog_seq():
+    site_id = uuid4()
+    ec_id = uuid4()
+    sites = [{"id": site_id, "name": "P Site"}]
+    equipment = []
+    points = []
+    energy = [
+        {
+            "id": ec_id,
+            "site_id": site_id,
+            "equipment_id": None,
+            "external_id": "penalty_default_01",
+            "name": "Out-of-schedule",
+            "description": "x",
+            "calc_type": "runtime_electric_kw",
+            "parameters": {"_penalty_catalog_seq": 1, "kw": 1},
+            "point_bindings": {},
+            "enabled": False,
+        }
+    ]
+    cursor = _mock_cursor(sites, equipment, points, energy)
+    conn = _mock_conn(cursor)
+    with patch("openfdd_stack.platform.data_model_ttl.get_conn", return_value=conn):
+        ttl = build_ttl_from_db()
+    assert "ofdd:penaltyCatalogSeq 1" in ttl

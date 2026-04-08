@@ -252,6 +252,12 @@ def _append_energy_calculation(
     if desc is not None and str(desc).strip():
         lines.append(f'    rdfs:comment "{_escape(str(desc).strip())}" ;')
     params = ec.get("parameters") if isinstance(ec.get("parameters"), dict) else {}
+    seq = params.get("_penalty_catalog_seq")
+    if seq is not None:
+        try:
+            lines.append(f'    ofdd:penaltyCatalogSeq {int(seq)} ;')
+        except (TypeError, ValueError):
+            pass
     pj = json.dumps(params, separators=(",", ":"), sort_keys=True)
     lines.append(f'    ofdd:calcParameters "{_escape(pj)}" ;')
     binds = ec.get("point_bindings") if isinstance(ec.get("point_bindings"), dict) else {}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import UUID
@@ -18,7 +19,13 @@ from openfdd_stack.platform.energy_calc_library import (
     list_calc_types_public,
     preview_energy_calc,
 )
+from openfdd_stack.platform.energy_penalty_catalog import (
+    PENALTY_CATALOG,
+    catalog_rows_for_seed,
+)
 from openfdd_stack.platform.realtime import TOPIC_CRUD_ENERGY_CALC, emit
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/energy-calculations", tags=["energy-calculations"])
 
@@ -87,6 +94,16 @@ def get_calc_types():
     return {"calc_types": list_calc_types_public()}
 
 
+@router.get("/penalty-catalog")
+def get_penalty_catalog():
+    """
+    Open-FDD default FDD energy-penalty narratives (18 rows) ordered by difficulty.
+    Use POST /energy-calculations/seed-default-penalty-catalog to materialize disabled
+    EnergyCalculation rows for a site.
+    """
+    return {"penalty_catalog": PENALTY_CATALOG}
+
+
 @router.get("/export")
 def export_energy_calculations(site_id: UUID = Query(..., description="Site UUID to export calcs for.")):
     """
@@ -100,8 +117,9 @@ def export_energy_calculations(site_id: UUID = Query(..., description="Site UUID
             if not site_row:
                 raise HTTPException(404, "Site not found")
             cur.execute(
-                f"""SELECT {_COLS} FROM energy_calculations
-                    WHERE site_id = %s ORDER BY external_id""",
+                "SELECT "
+                + _COLS
+                + " FROM energy_calculations\n                    WHERE site_id = %s ORDER BY external_id",
                 (str(site_id),),
             )
             calc_rows = cur.fetchall()
@@ -131,6 +149,7 @@ def export_energy_calculations(site_id: UUID = Query(..., description="Site UUID
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "documentation_hint": "See modeling/ai_assisted_energy_calculations in Open-FDD docs.",
         "calc_types": list_calc_types_public(),
+        "penalty_catalog": PENALTY_CATALOG,
         "energy_calculations": out_calcs,
     }
 
@@ -212,14 +231,14 @@ def import_energy_calculations(body: EnergyCalculationsImportBody):
                 _validate_calc_type(row.calc_type)
                 eq_db_id = _resolve_import_equipment_id(cur, sid, row)
                 cur.execute(
-                    f"""SELECT id FROM energy_calculations
+                    """SELECT id FROM energy_calculations
                         WHERE site_id = %s AND external_id = %s""",
                     (sid, row.external_id),
                 )
                 existing = cur.fetchone()
                 if existing:
                     cur.execute(
-                        f"""UPDATE energy_calculations SET
+                        """UPDATE energy_calculations SET
                             equipment_id = %s, name = %s, description = %s, calc_type = %s,
                             parameters = %s, point_bindings = %s, enabled = %s, updated_at = %s
                             WHERE id = %s
@@ -244,7 +263,7 @@ def import_energy_calculations(body: EnergyCalculationsImportBody):
                     )
                 else:
                     cur.execute(
-                        f"""INSERT INTO energy_calculations
+                        """INSERT INTO energy_calculations
                             (site_id, equipment_id, external_id, name, description, calc_type,
                              parameters, point_bindings, enabled, updated_at)
                             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
@@ -276,12 +295,84 @@ def import_energy_calculations(body: EnergyCalculationsImportBody):
     try:
         sync_ttl_to_file()
     except Exception:
-        pass
+        logger.exception("sync_ttl_to_file failed after energy calculations import")
     return {
         "total": len(body.energy_calculations),
         "created": created,
         "updated": updated,
         "warnings": warnings,
+    }
+
+
+@router.post("/seed-default-penalty-catalog")
+def seed_default_penalty_catalog(
+    site_id: UUID = Query(..., description="Site to attach catalog rows."),
+    replace: bool = Query(
+        False,
+        description="If true, remove existing penalty_default_* rows for this site, then insert all 18.",
+    ),
+):
+    """
+    Insert 18 disabled EnergyCalculation rows (``penalty_default_01`` … ``penalty_default_18``)
+    with default parameters and engineering narratives. Enable and bind points in the UI or via import.
+
+    Open-Meteo and utility $/kWh / $/therm remain on platform / site config — single source for weather and rates.
+    """
+    rows = catalog_rows_for_seed()
+    now = datetime.now(timezone.utc)
+    created = 0
+    deleted = 0
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM sites WHERE id = %s", (str(site_id),))
+            if not cur.fetchone():
+                raise HTTPException(404, "Site not found")
+            if replace:
+                cur.execute(
+                    """DELETE FROM energy_calculations
+                       WHERE site_id = %s AND external_id LIKE 'penalty_default_%%'""",
+                    (str(site_id),),
+                )
+                deleted = cur.rowcount
+            for row in rows:
+                if not replace:
+                    cur.execute(
+                        """SELECT id FROM energy_calculations
+                           WHERE site_id = %s AND external_id = %s""",
+                        (str(site_id), row["external_id"]),
+                    )
+                    if cur.fetchone():
+                        continue
+                cur.execute(
+                    """INSERT INTO energy_calculations
+                        (site_id, equipment_id, external_id, name, description, calc_type,
+                         parameters, point_bindings, enabled, updated_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (
+                        str(site_id),
+                        None,
+                        row["external_id"],
+                        row["name"],
+                        row["description"],
+                        row["calc_type"],
+                        Json(row["parameters"]),
+                        Json(row["point_bindings"]),
+                        row["enabled"],
+                        now,
+                    ),
+                )
+                created += 1
+        conn.commit()
+    try:
+        sync_ttl_to_file()
+    except Exception:
+        logger.exception("sync_ttl_to_file failed after seed penalty catalog")
+    return {
+        "site_id": str(site_id),
+        "created": created,
+        "rows_in_catalog": len(rows),
+        "deleted_before_insert": deleted if replace else 0,
+        "replace": replace,
     }
 
 
@@ -329,20 +420,21 @@ def create_energy_calculation(body: EnergyCalculationCreate):
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                f"""SELECT {_COLS} FROM energy_calculations
-                    WHERE site_id = %s AND external_id = %s""",
+                "SELECT "
+                + _COLS
+                + " FROM energy_calculations\n                    WHERE site_id = %s AND external_id = %s",
                 (str(body.site_id), body.external_id),
             )
             existing = cur.fetchone()
             if existing:
-                return EnergyCalculationRead.model_validate(dict(existing))
+                raise HTTPException(
+                    409,
+                    "Energy calculation with this external_id already exists for this site",
+                )
             try:
                 cur.execute(
-                    f"""INSERT INTO energy_calculations
-                        (site_id, equipment_id, external_id, name, description, calc_type,
-                         parameters, point_bindings, enabled, updated_at)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                        RETURNING {_COLS}""",
+                    "INSERT INTO energy_calculations\n                        (site_id, equipment_id, external_id, name, description, calc_type,\n                         parameters, point_bindings, enabled, updated_at)\n                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)\n                        RETURNING "
+                    + _COLS,
                     (
                         str(body.site_id),
                         str(body.equipment_id) if body.equipment_id else None,
@@ -360,17 +452,22 @@ def create_energy_calculation(body: EnergyCalculationCreate):
             except psycopg2.IntegrityError:
                 conn.rollback()
                 raise HTTPException(
-                    409, "Energy calculation with this external_id already exists for this site"
-                )
+                    409,
+                    "Energy calculation with this external_id already exists for this site",
+                ) from None
+            emit(
+                TOPIC_CRUD_ENERGY_CALC + ".created",
+                {
+                    "id": str(row["id"]),
+                    "site_id": str(row["site_id"]),
+                    "external_id": row["external_id"],
+                },
+            )
         conn.commit()
     try:
         sync_ttl_to_file()
     except Exception:
-        pass
-    emit(
-        TOPIC_CRUD_ENERGY_CALC + ".created",
-        {"id": str(row["id"]), "site_id": str(row["site_id"]), "external_id": row["external_id"]},
-    )
+        logger.exception("sync_ttl_to_file failed after energy calculation create")
     return EnergyCalculationRead.model_validate(dict(row))
 
 
@@ -378,7 +475,10 @@ def create_energy_calculation(body: EnergyCalculationCreate):
 def get_energy_calculation(ec_id: UUID):
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute(f"""SELECT {_COLS} FROM energy_calculations WHERE id = %s""", (str(ec_id),))
+            cur.execute(
+                "SELECT " + _COLS + " FROM energy_calculations WHERE id = %s",
+                (str(ec_id),),
+            )
             row = cur.fetchone()
     if not row:
         raise HTTPException(404, "Energy calculation not found")
@@ -431,7 +531,7 @@ def update_energy_calculation(ec_id: UUID, body: EnergyCalculationUpdate):
     try:
         sync_ttl_to_file()
     except Exception:
-        pass
+        logger.exception("sync_ttl_to_file failed after energy calculation update")
     emit(TOPIC_CRUD_ENERGY_CALC + ".updated", {"id": str(ec_id)})
     return EnergyCalculationRead.model_validate(dict(row))
 
@@ -449,6 +549,6 @@ def delete_energy_calculation(ec_id: UUID):
     try:
         sync_ttl_to_file()
     except Exception:
-        pass
+        logger.exception("sync_ttl_to_file failed after energy calculation delete")
     emit(TOPIC_CRUD_ENERGY_CALC + ".deleted", {"id": str(ec_id)})
     return {"status": "deleted"}

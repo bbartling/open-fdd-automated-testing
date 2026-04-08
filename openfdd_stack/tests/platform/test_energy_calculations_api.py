@@ -128,6 +128,47 @@ def test_create_energy_calc(mock_emit, mock_sync):
 
 @patch("openfdd_stack.platform.api.energy_calculations.sync_ttl_to_file")
 @patch("openfdd_stack.platform.api.energy_calculations.emit")
+def test_create_energy_calc_duplicate_409(mock_emit, mock_sync):
+    site_id = uuid4()
+    ec_id = uuid4()
+    now = datetime.now(timezone.utc)
+    existing = {
+        "id": ec_id,
+        "site_id": site_id,
+        "equipment_id": None,
+        "external_id": "dup",
+        "name": "Existing",
+        "description": None,
+        "calc_type": "runtime_electric_kw",
+        "parameters": {},
+        "point_bindings": {},
+        "enabled": True,
+        "created_at": now,
+        "updated_at": now,
+    }
+    conn = _energy_conn(fetchone=existing)
+    with patch(
+        "openfdd_stack.platform.api.energy_calculations.get_conn",
+        side_effect=lambda: conn,
+    ):
+        r = client.post(
+            "/energy-calculations",
+            json={
+                "site_id": str(site_id),
+                "external_id": "dup",
+                "name": "New name",
+                "calc_type": "runtime_electric_kw",
+                "parameters": {"kw": 1},
+                "point_bindings": {},
+                "enabled": True,
+            },
+        )
+    assert r.status_code == 409
+    mock_emit.assert_not_called()
+
+
+@patch("openfdd_stack.platform.api.energy_calculations.sync_ttl_to_file")
+@patch("openfdd_stack.platform.api.energy_calculations.emit")
 def test_export_energy_bundle(mock_emit, mock_sync):
     site_id = uuid4()
     ec_id = uuid4()
@@ -162,7 +203,36 @@ def test_export_energy_bundle(mock_emit, mock_sync):
     assert len(data["calc_types"]) >= 1
     assert len(data["energy_calculations"]) == 1
     assert data["energy_calculations"][0]["external_id"] == "fan_rt"
+    assert len(data.get("penalty_catalog") or []) == 18
     mock_emit.assert_not_called()
+
+
+def test_penalty_catalog_get():
+    r = client.get("/energy-calculations/penalty-catalog")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["penalty_catalog"]) == 18
+    assert data["penalty_catalog"][0]["seq"] == 1
+
+
+@patch("openfdd_stack.platform.api.energy_calculations.sync_ttl_to_file")
+@patch("openfdd_stack.platform.api.energy_calculations.emit")
+def test_seed_default_penalty_catalog(mock_emit, mock_sync):
+    site_id = uuid4()
+    conn = _energy_conn()
+    cur = conn.cursor.return_value.__enter__.return_value
+    # 1× site check, then 18× “no existing row” for penalty_default_01 … _18
+    cur.fetchone.side_effect = [{"id": site_id}] + [None] * 18
+    with patch(
+        "openfdd_stack.platform.api.energy_calculations.get_conn",
+        side_effect=lambda: conn,
+    ):
+        r = client.post(f"/energy-calculations/seed-default-penalty-catalog?site_id={site_id}")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["created"] == 18
+    assert body["rows_in_catalog"] == 18
+    mock_sync.assert_called_once()
 
 
 @patch("openfdd_stack.platform.api.energy_calculations.sync_ttl_to_file")

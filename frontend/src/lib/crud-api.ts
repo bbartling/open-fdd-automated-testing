@@ -213,6 +213,19 @@ export function importEnergyCalculations(body: EnergyCalculationsImportBody) {
   });
 }
 
+export function seedDefaultPenaltyCatalog(siteId: string, replace = false) {
+  const q = new URLSearchParams();
+  q.set("site_id", siteId);
+  if (replace) q.set("replace", "true");
+  return apiFetch<{
+    site_id: string;
+    created: number;
+    rows_in_catalog: number;
+    deleted_before_insert: number;
+    replace: boolean;
+  }>(`/energy-calculations/seed-default-penalty-catalog?${q.toString()}`, { method: "POST" });
+}
+
 export function updateEnergyCalculation(id: string, patch: EnergyCalculationPatchBody) {
   return apiFetch<EnergyCalculation>(`/energy-calculations/${id}`, {
     method: "PATCH",

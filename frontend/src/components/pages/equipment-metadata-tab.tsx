@@ -93,6 +93,49 @@ const DOCUMENT_FIELDS = [
   "notes",
 ];
 
+/** Shown first — sizing & nameplate inputs that pair with energy penalty calculators. */
+const ENERGY_PRIMARY_MECHANICAL_KEYS = [
+  "equipment_tag",
+  "manufacturer",
+  "model_number",
+  "design_cfm",
+  "min_cfm",
+  "max_cfm",
+  "outside_air_cfm",
+  "return_air_cfm",
+  "exhaust_air_cfm",
+  "fan_motor_hp",
+  "fan_motor_fla",
+  "design_static_pressure",
+  "cooling_capacity_tons",
+  "heating_capacity_mbh",
+  "chiller_capacity_tons",
+  "boiler_capacity_mbh",
+  "pump_flow_gpm",
+  "pump_head_ft",
+  "water_flow_gpm",
+  "entering_water_temp_f",
+  "leaving_water_temp_f",
+  "coil_type",
+];
+
+const ENERGY_PRIMARY_ELECTRICAL_KEYS = [
+  "motor_hp",
+  "fla",
+  "rla",
+  "lra",
+  "electrical_system_voltage",
+  "electrical_phase",
+  "vfd_present",
+  "vfd_model",
+  "starter_type",
+  "disconnect_type",
+  "feeder_breaker",
+];
+
+const MECHANICAL_EXTENDED_KEYS = MECHANICAL_FIELDS.filter((k) => !ENERGY_PRIMARY_MECHANICAL_KEYS.includes(k));
+const ELECTRICAL_EXTENDED_KEYS = ELECTRICAL_FIELDS.filter((k) => !ENERGY_PRIMARY_ELECTRICAL_KEYS.includes(k));
+
 function readSection(
   equipment: Equipment | undefined,
   section: "controls" | "mechanical" | "electrical" | "documents",
@@ -138,9 +181,18 @@ export function EquipmentMetadataTab() {
   return (
     <div>
       <p className="mb-4 text-sm text-muted-foreground">
-        Equipment tags, capacities, and topology differ by building. What you save here is stored on the selected
-        site&apos;s equipment and exported into <code className="rounded bg-muted px-1 text-xs">data_model.ttl</code>{" "}
-        for that site only.
+        Sizing and nameplate fields support the{" "}
+        <a
+          href="https://bbartling.github.io/open-fdd-afdd-stack/modeling/energy_penalty_equations"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-primary underline-offset-4 hover:underline"
+        >
+          energy penalty catalog
+        </a>{" "}
+        and SPARQL over <code className="rounded bg-muted px-1 text-xs">ofdd:*</code> engineering predicates. Data is
+        stored per equipment and exported into <code className="rounded bg-muted px-1 text-xs">data_model.ttl</code>.
+        Controls and document provenance are under <strong>Advanced</strong> so they do not block the energy workflow.
       </p>
 
       <Card>
@@ -313,12 +365,48 @@ function EngineeringEditor({
     </Card>
   );
 
+  const primaryMechanical = ENERGY_PRIMARY_MECHANICAL_KEYS.reduce<FlatMap>((acc, k) => {
+    acc[k] = mechanical[k] ?? "";
+    return acc;
+  }, {});
+  const primaryElectrical = ENERGY_PRIMARY_ELECTRICAL_KEYS.reduce<FlatMap>((acc, k) => {
+    acc[k] = electrical[k] ?? "";
+    return acc;
+  }, {});
+  const setPrimaryMechanical = (next: FlatMap) =>
+    setMechanical({ ...mechanical, ...next });
+  const setPrimaryElectrical = (next: FlatMap) =>
+    setElectrical({ ...electrical, ...next });
+
+  const extendedMechanical = MECHANICAL_EXTENDED_KEYS.reduce<FlatMap>((acc, k) => {
+    acc[k] = mechanical[k] ?? "";
+    return acc;
+  }, {});
+  const extendedElectrical = ELECTRICAL_EXTENDED_KEYS.reduce<FlatMap>((acc, k) => {
+    acc[k] = electrical[k] ?? "";
+    return acc;
+  }, {});
+
   return (
     <div className="mt-6 space-y-6">
-      {renderFields("Controls", controls, setControls)}
-      {renderFields("Mechanical", mechanical, setMechanical)}
-      {renderFields("Electrical", electrical, setElectrical)}
-      {renderFields("Documents / Provenance", documents, setDocuments)}
+      {renderFields("Energy sizing — mechanical", primaryMechanical, setPrimaryMechanical)}
+      {renderFields("Energy sizing — electrical", primaryElectrical, setPrimaryElectrical)}
+
+      <details className="rounded-lg border border-border/60 bg-card">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-medium">Advanced — controls, documents, extended fields</summary>
+        <div className="space-y-6 border-t border-border/40 px-4 pb-4 pt-4">
+          {renderFields("Controls", controls, setControls)}
+          {renderFields("Documents / Provenance", documents, setDocuments)}
+          {MECHANICAL_EXTENDED_KEYS.length > 0 &&
+            renderFields("Mechanical (extended)", extendedMechanical, (next) =>
+              setMechanical({ ...mechanical, ...next }),
+            )}
+          {ELECTRICAL_EXTENDED_KEYS.length > 0 &&
+            renderFields("Electrical (extended)", extendedElectrical, (next) =>
+              setElectrical({ ...electrical, ...next }),
+            )}
+        </div>
+      </details>
 
       <Card>
         <CardHeader className="pb-2">

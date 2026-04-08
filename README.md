@@ -115,6 +115,25 @@ printf '%s' 'YourSecurePassword' | ./scripts/bootstrap.sh \
 
 Also available is the **partial stack** mode: `./scripts/bootstrap.sh --mode collector`, `--mode model`, or `--mode engine`. See the `Docs` below for more information.
 
+### Run tests (`--test`)
+
+Use the same bootstrap script for local verification (no separate CI recipe required on the machine):
+
+```bash
+cd open-fdd-afdd-stack
+./scripts/bootstrap.sh --test
+```
+
+This runs frontend lint, TypeScript `tsc`, Vitest, backend `pytest`, and Caddyfile validation when Docker is available. If Docker is missing or the daemon is not usable, Caddy validation is skipped; frontend and backend tests still run when Node/npm and Python (with dev deps) are available.
+
+Optional one-shot creation of `.venv` and `pip install -e ".[dev]"` when `pytest` is not installed:
+
+```bash
+OFDD_BOOTSTRAP_INSTALL_DEV=1 ./scripts/bootstrap.sh --test
+```
+
+Combine with health checks: `./scripts/bootstrap.sh --verify --test`.
+
 ---
 
 ## Python layout

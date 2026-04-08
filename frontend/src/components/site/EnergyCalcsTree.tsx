@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import {
   Table,
   TableHeader,
@@ -91,6 +91,43 @@ export function EnergyCalcsTree({
     return s;
   });
   const [menu, setMenu] = useState<MenuState>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menu) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenu(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menu]);
+
+  useEffect(() => {
+    if (!menu) return;
+    requestAnimationFrame(() => {
+      menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    });
+  }, [menu]);
+
+  const onMenuKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "Tab") return;
+    const root = menuRef.current;
+    if (!root) return;
+    const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>("button")).filter(
+      (b) => !b.disabled,
+    );
+    if (buttons.length === 0) return;
+    const i = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.shiftKey) {
+      if (i <= 0) {
+        e.preventDefault();
+        buttons[buttons.length - 1]?.focus();
+      }
+    } else if (i === buttons.length - 1 || i === -1) {
+      e.preventDefault();
+      buttons[0]?.focus();
+    }
+  }, []);
 
   const toggle = useCallback((id: string) => {
     setOpenIds((prev) => {
@@ -147,6 +184,7 @@ export function EnergyCalcsTree({
                 onToggle={toggle}
                 Icon={Icon}
                 onCalcContextMenu={handleCalcContextMenu}
+                menuCalcId={menu?.calc.id ?? null}
               />
             );
           })}
@@ -164,9 +202,12 @@ export function EnergyCalcsTree({
             }}
           />
           <div
+            ref={menuRef}
             className="fixed z-50 min-w-[180px] rounded-lg border border-border/60 bg-card py-1 shadow-lg"
             style={{ left: menu.x, top: menu.y }}
             role="menu"
+            aria-label="Energy calculation actions"
+            onKeyDown={onMenuKeyDown}
           >
             <button
               type="button"
@@ -219,6 +260,7 @@ function FolderBlock({
   onToggle,
   Icon,
   onCalcContextMenu,
+  menuCalcId,
 }: {
   folder: FolderNode;
   depth: number;
@@ -226,6 +268,7 @@ function FolderBlock({
   onToggle: (id: string) => void;
   Icon: typeof Box;
   onCalcContextMenu: (e: React.MouseEvent, calc: EnergyCalculation) => void;
+  menuCalcId: string | null;
 }) {
   const indent = depth * 18;
   const count = folder.children.length;
@@ -272,6 +315,8 @@ function FolderBlock({
           <TableRow
             key={calc.id}
             className="border-border/40"
+            aria-haspopup="menu"
+            aria-expanded={menuCalcId === calc.id}
             onContextMenu={(e) => onCalcContextMenu(e, calc)}
           >
             <TableCell className="w-[28px]" style={{ paddingLeft: 12 + indent + 18 }} />

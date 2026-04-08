@@ -414,6 +414,8 @@ export interface EnergyCalculationsExportPayload {
   exported_at: string;
   documentation_hint?: string;
   calc_types: EnergyCalcTypePublic[];
+  /** Default FDD penalty narratives (18); same as GET /energy-calculations/penalty-catalog */
+  penalty_catalog?: Array<Record<string, unknown>>;
   energy_calculations: EnergyCalculation[];
 }
 

@@ -77,7 +77,7 @@ def normalize_modbus_config(cfg: dict[str, Any]) -> Optional[dict[str, Any]]:
     dec = cfg.get("decode")
     if dec is not None and dec != "":
         ds = str(dec).strip().lower()
-        if ds not in _ALLOWED_DECODE or ds == "":
+        if ds not in _ALLOWED_DECODE:
             return None
         out["decode"] = ds
 

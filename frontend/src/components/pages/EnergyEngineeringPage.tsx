@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,7 @@ import {
   listEnergyCalculations,
   listEnergyCalcTypes,
   previewEnergyCalculation,
+  seedDefaultPenaltyCatalog,
   updateEnergyCalculation,
 } from "@/lib/crud-api";
 import type {
@@ -26,6 +27,8 @@ import { EquipmentMetadataTab } from "./equipment-metadata-tab";
 
 const DOCS_ENERGY_AI =
   "https://bbartling.github.io/open-fdd-afdd-stack/modeling/ai_assisted_energy_calculations";
+const DOCS_ENERGY_PENALTY =
+  "https://bbartling.github.io/open-fdd-afdd-stack/modeling/energy_penalty_equations";
 
 function downloadJson(data: unknown, filename: string) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -43,6 +46,7 @@ function EnergyAiWorkflowCard({ siteId }: { siteId: string }) {
   const [importText, setImportText] = useState("");
   const [importError, setImportError] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<string | null>(null);
+  const [seedMsg, setSeedMsg] = useState<string | null>(null);
 
   const exportMut = useMutation({
     mutationFn: () => exportEnergyCalculations(siteId),
@@ -51,9 +55,34 @@ function EnergyAiWorkflowCard({ siteId }: { siteId: string }) {
     },
   });
 
+  const seedMut = useMutation({
+    mutationFn: (replace: boolean) => seedDefaultPenaltyCatalog(siteId, replace),
+    onSuccess: (res) => {
+      setSeedMsg(
+        `Seeded ${res.created} default penalty rows (${res.rows_in_catalog} in catalog). ` +
+          (res.deleted_before_insert ? `Removed ${res.deleted_before_insert} prior defaults. ` : "") +
+          "Rows start disabled — enable and bind points in the tree.",
+      );
+      void queryClient.invalidateQueries({ queryKey: ["energy-calculations", siteId] });
+      void queryClient.invalidateQueries({ queryKey: ["data-model"] });
+    },
+    onError: (e: Error) => {
+      setSeedMsg(`Seed failed: ${e.message}`);
+    },
+  });
+
   const importMut = useMutation({
     mutationFn: async (raw: string) => {
-      const parsed: unknown = JSON.parse(raw);
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (parseErr) {
+        const msg =
+          parseErr instanceof SyntaxError && parseErr.message
+            ? `Invalid JSON (${parseErr.message}). Please check the file or paste valid JSON.`
+            : "Invalid JSON: please check the file or paste valid JSON.";
+        throw new Error(msg);
+      }
       let body: EnergyCalculationsImportBody;
       if (Array.isArray(parsed)) {
         body = {
@@ -113,6 +142,15 @@ function EnergyAiWorkflowCard({ siteId }: { siteId: string }) {
             className="font-medium text-primary underline-offset-4 hover:underline"
           >
             docs — AI-assisted energy calculations
+          </a>{" "}
+          and the{" "}
+          <a
+            href={DOCS_ENERGY_PENALTY}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-primary underline-offset-4 hover:underline"
+          >
+            default penalty equation catalog
           </a>
           .
         </p>
@@ -145,7 +183,38 @@ function EnergyAiWorkflowCard({ siteId }: { siteId: string }) {
             <Database className="h-4 w-4" />
             {exportMut.isPending ? "Preparing…" : "Download export JSON"}
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSeedMsg(null);
+              seedMut.mutate(false);
+            }}
+            disabled={seedMut.isPending}
+            className="inline-flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/15 disabled:opacity-50"
+          >
+            {seedMut.isPending ? "Seeding…" : "Seed default penalty catalog (18)"}
+          </button>
+          <button
+            type="button"
+            title="Deletes existing penalty_default_* rows for this site, then inserts 18 fresh defaults."
+            onClick={() => {
+              if (
+                !window.confirm(
+                  "Replace all default penalty rows (penalty_default_*) for this site? This deletes existing defaults before re-inserting.",
+                )
+              ) {
+                return;
+              }
+              setSeedMsg(null);
+              seedMut.mutate(true);
+            }}
+            disabled={seedMut.isPending}
+            className="inline-flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/15 disabled:opacity-50"
+          >
+            Replace &amp; re-seed defaults
+          </button>
         </div>
+        {seedMsg && <p className="text-sm text-muted-foreground">{seedMsg}</p>}
         {exportMut.isError && (
           <p className="text-sm text-destructive">{(exportMut.error as Error).message}</p>
         )}
@@ -219,6 +288,96 @@ function buildParametersFromForm(
     }
   }
   return out;
+}
+
+function DeleteEnergyCalcDialog({
+  target,
+  onCancel,
+  onConfirm,
+  disabled,
+}: {
+  target: { id: string; name: string };
+  onCancel: () => void;
+  onConfirm: () => void;
+  disabled: boolean;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = panelRef.current;
+    el?.querySelector<HTMLButtonElement>("button[data-autofocus]")?.focus();
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4"
+      role="presentation"
+      onClick={onCancel}
+    >
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="eecalc-delete-title"
+        className="max-w-md rounded-lg border border-border bg-card p-4 shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key !== "Tab") return;
+          const root = panelRef.current;
+          if (!root) return;
+          const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>("button")).filter(
+            (b) => !b.disabled,
+          );
+          if (buttons.length === 0) return;
+          const i = buttons.indexOf(document.activeElement as HTMLButtonElement);
+          if (e.shiftKey) {
+            if (i <= 0) {
+              e.preventDefault();
+              buttons[buttons.length - 1]?.focus();
+            }
+          } else if (i === buttons.length - 1 || i === -1) {
+            e.preventDefault();
+            buttons[0]?.focus();
+          }
+        }}
+      >
+        <h2 id="eecalc-delete-title" className="text-lg font-semibold">
+          Delete calculation?
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          This removes{" "}
+          <span className="font-medium text-foreground">{target.name || target.id}</span> from this site. This cannot be
+          undone.
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            data-autofocus
+            className="rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium"
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground disabled:opacity-50"
+            disabled={disabled}
+            onClick={onConfirm}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function EnergyCalculationWorkbench() {
@@ -302,6 +461,7 @@ function EnergyCalculationWorkbench() {
           point_bindings = parsed as Record<string, unknown>;
         }
       } catch {
+        // JSON.parse failed; surface a single clear validation error (parse details omitted).
         throw new Error("Point bindings must be valid JSON object.");
       }
       const parameters = buildParametersFromForm(activeSpec.fields, mergedParamValues);
@@ -337,6 +497,8 @@ function EnergyCalculationWorkbench() {
       void queryClient.invalidateQueries({ queryKey: ["data-model"] });
     },
   });
+
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   const patchMut = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
@@ -384,14 +546,26 @@ function EnergyCalculationWorkbench() {
             <p className="text-sm text-destructive">{(listQuery.error as Error).message}</p>
           )}
           {listQuery.data && (
-            <EnergyCalcsTree
-              equipment={siteEquipment}
-              calculations={listQuery.data}
-              onSetEnabled={(id, enabled) => patchMut.mutate({ id, enabled })}
-              onDeleteCalc={(id, name) => {
-                if (window.confirm(`Delete calculation "${name}"?`)) deleteMut.mutate(id);
-              }}
-            />
+            <>
+              <EnergyCalcsTree
+                equipment={siteEquipment}
+                calculations={listQuery.data}
+                onSetEnabled={(id, enabled) => patchMut.mutate({ id, enabled })}
+                onDeleteCalc={(id, name) => setDeleteTarget({ id, name })}
+              />
+              {deleteTarget && (
+                <DeleteEnergyCalcDialog
+                  target={deleteTarget}
+                  onCancel={() => setDeleteTarget(null)}
+                  disabled={deleteMut.isPending}
+                  onConfirm={() => {
+                    deleteMut.mutate(deleteTarget.id, {
+                      onSettled: () => setDeleteTarget(null),
+                    });
+                  }}
+                />
+              )}
+            </>
           )}
         </CardContent>
       </Card>

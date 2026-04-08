@@ -8,7 +8,7 @@ nav_order: 5
 
 This page describes a **single upload** workflow for mechanical engineers: send the **canonical prompt**, the **data-model export JSON**, and **fault/rule context** (strongly recommended) to an LLM; get back import-ready JSON; **validate** it so you know it will parse on the Open-FDD backend; then **PUT /data-model/import** and run FDD (or Sparkl/tests) as needed.
 
-**After the data model is stable:** use **[AI-assisted energy calculations](ai_assisted_energy_calculations)** for phase two — `GET /energy-calculations/export?site_id=…` (bundle includes embedded `calc_types` for every predefined calculator), LLM-authored `energy_calculations` rows, then `PUT /energy-calculations/import`. Same site-scoping rules as points and equipment.
+**After the data model is stable:** use **[AI-assisted energy calculations](ai_assisted_energy_calculations)** for phase two — `GET /energy-calculations/export?site_id=…` (bundle includes **`calc_types`**, **`penalty_catalog`** (18 default narratives), and `energy_calculations`), LLM-authored or operator-edited rows, then `PUT /energy-calculations/import`. Optionally **[seed default penalty rows](energy_penalty_equations)** first. Same site-scoping rules as points and equipment.
 
 **Best practice:** Decide **which Open-FDD faults and rules** you will run *before* finalizing `polling`. The canonical prompt is **fault-first**: it tells the model to gather job context (faults, YAML, units, production vs bench, weather scope) or to stay conservative on polling until that context exists.
 
