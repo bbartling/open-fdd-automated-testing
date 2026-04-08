@@ -613,11 +613,18 @@ def preview_energy_calc(calc_type: str, parameters: dict[str, Any]) -> dict[str,
         assign = str(params.get("assign_cooling_to") or "electric")
         btu_tot = (qc + qh) * h
         out["annual_mmbtu_saved"] = (btu_tot / 1_000_000.0) if btu_tot else None
-        kwh_c = (qc * h) / (3412.0 * max(cop, 1e-6)) if assign == "electric" else 0.0
-        therms_h = ((qh * h) / (100_000.0 * max(heff, 1e-6))) if qh else 0.0
-        cost = kwh_c * er + therms_h * tr
+        if assign == "electric":
+            kwh_c = (qc * h) / (3412.0 * max(cop, 1e-6))
+            therms_gas = ((qh * h) / (100_000.0 * max(heff, 1e-6))) if qh else 0.0
+        else:
+            # Model cooling as gas-fired reheat / absorption-style penalty (therms).
+            kwh_c = 0.0
+            therms_cool = ((qc * h) / (100_000.0 * max(heff, 1e-6))) if qc else 0.0
+            therms_heat = ((qh * h) / (100_000.0 * max(heff, 1e-6))) if qh else 0.0
+            therms_gas = therms_cool + therms_heat
+        cost = kwh_c * er + therms_gas * tr
         kwh = kwh_c if kwh_c else None
-        therms = therms_h if therms_h else None
+        therms = therms_gas if therms_gas else None
         if assign == "gas":
             kwh = None
         out["annual_kwh_saved"] = round(kwh, 4) if kwh else None

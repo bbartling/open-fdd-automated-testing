@@ -14,7 +14,9 @@ def _validate_modbus_config_common(v: Any) -> Any:
     if not isinstance(v, dict):
         raise ValueError("modbus_config must be a JSON object or null")
     if len(v) == 0:
-        return v
+        raise ValueError(
+            "modbus_config cannot be an empty object; use null to clear Modbus configuration."
+        )
     from openfdd_stack.platform.modbus_point_config import normalize_modbus_config
 
     n = normalize_modbus_config(v)

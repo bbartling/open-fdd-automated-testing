@@ -222,6 +222,7 @@ def import_energy_calculations(body: EnergyCalculationsImportBody):
     updated = 0
     warnings: list[str] = []
     now = datetime.now(timezone.utc)
+    pending_emits: list[tuple[str, dict[str, Any]]] = []
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT id FROM sites WHERE id = %s", (sid,))
@@ -257,9 +258,11 @@ def import_energy_calculations(body: EnergyCalculationsImportBody):
                     )
                     cur.fetchone()
                     updated += 1
-                    emit(
-                        TOPIC_CRUD_ENERGY_CALC + ".updated",
-                        {"id": str(existing["id"]), "external_id": row.external_id},
+                    pending_emits.append(
+                        (
+                            TOPIC_CRUD_ENERGY_CALC + ".updated",
+                            {"id": str(existing["id"]), "external_id": row.external_id},
+                        )
                     )
                 else:
                     cur.execute(
@@ -283,15 +286,19 @@ def import_energy_calculations(body: EnergyCalculationsImportBody):
                     )
                     ins = cur.fetchone()
                     created += 1
-                    emit(
-                        TOPIC_CRUD_ENERGY_CALC + ".created",
-                        {
-                            "id": str(ins["id"]),
-                            "site_id": sid,
-                            "external_id": row.external_id,
-                        },
+                    pending_emits.append(
+                        (
+                            TOPIC_CRUD_ENERGY_CALC + ".created",
+                            {
+                                "id": str(ins["id"]),
+                                "site_id": sid,
+                                "external_id": row.external_id,
+                            },
+                        )
                     )
         conn.commit()
+    for topic, payload in pending_emits:
+        emit(topic, payload)
     try:
         sync_ttl_to_file()
     except Exception:
@@ -392,7 +399,14 @@ def list_energy_calculations(
 ):
     with get_conn() as conn:
         with conn.cursor() as cur:
-            if equipment_id:
+            if site_id and equipment_id:
+                cur.execute(
+                    f"""SELECT {_COLS} FROM energy_calculations
+                        WHERE site_id = %s AND equipment_id = %s
+                        ORDER BY external_id LIMIT %s OFFSET %s""",
+                    (str(site_id), str(equipment_id), limit, offset),
+                )
+            elif equipment_id:
                 cur.execute(
                     f"""SELECT {_COLS} FROM energy_calculations
                         WHERE equipment_id = %s ORDER BY external_id LIMIT %s OFFSET %s""",
@@ -455,15 +469,15 @@ def create_energy_calculation(body: EnergyCalculationCreate):
                     409,
                     "Energy calculation with this external_id already exists for this site",
                 ) from None
-            emit(
-                TOPIC_CRUD_ENERGY_CALC + ".created",
-                {
-                    "id": str(row["id"]),
-                    "site_id": str(row["site_id"]),
-                    "external_id": row["external_id"],
-                },
-            )
         conn.commit()
+        emit(
+            TOPIC_CRUD_ENERGY_CALC + ".created",
+            {
+                "id": str(row["id"]),
+                "site_id": str(row["site_id"]),
+                "external_id": row["external_id"],
+            },
+        )
     try:
         sync_ttl_to_file()
     except Exception:

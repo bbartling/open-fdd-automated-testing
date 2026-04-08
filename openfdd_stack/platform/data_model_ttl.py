@@ -40,9 +40,16 @@ logger = logging.getLogger(__name__)
 
 
 def _escape(s: str) -> str:
+    """Escape for Turtle double-quoted literals (labels, comments, embedded JSON)."""
     if s is None:
         return ""
-    return s.replace("\\", "\\\\").replace('"', '\\"')
+    return (
+        s.replace("\\", "\\\\")
+        .replace("\r", "\\r")
+        .replace("\n", "\\n")
+        .replace("\t", "\\t")
+        .replace('"', '\\"')
+    )
 
 
 def _timeseries_store_uri() -> str:

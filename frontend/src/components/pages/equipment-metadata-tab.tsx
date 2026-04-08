@@ -310,12 +310,26 @@ function EngineeringEditor({
         const detail = err instanceof Error ? ` (${err.message})` : "";
         throw new Error(`Invalid JSON in topology${detail}`);
       }
+      if (
+        topology === null ||
+        typeof topology !== "object" ||
+        Array.isArray(topology)
+      ) {
+        throw new Error("Topology must be a JSON object (not null, array, or primitive).");
+      }
       let extensions: unknown;
       try {
         extensions = JSON.parse(extensionsJson);
       } catch (err) {
         const detail = err instanceof Error ? ` (${err.message})` : "";
         throw new Error(`Invalid JSON in extensions${detail}`);
+      }
+      if (
+        extensions === null ||
+        typeof extensions !== "object" ||
+        Array.isArray(extensions)
+      ) {
+        throw new Error("Extensions must be a JSON object (not null, array, or primitive).");
       }
       const baseMetadata = ((selectedEquipment.metadata as Record<string, unknown> | undefined) ?? {}) as Record<
         string,

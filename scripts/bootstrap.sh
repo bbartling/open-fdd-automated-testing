@@ -1384,13 +1384,16 @@ verify_code() {
       frontend_running=true
     else
       # If host npm is missing, auto-start frontend container so --test is truly one command.
+      # Guard Docker/Compose before docker_compose_cmd: under set -e, a failed compose probe exits the script.
       if ! have_cmd npm; then
-        echo "Frontend container not running; starting frontend service for tests..."
-        local dc
-        dc="$(docker_compose_cmd)"
-        if (cd "$STACK_DIR" && $dc up -d frontend >/dev/null 2>&1); then
-          if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx openfdd_frontend; then
-            frontend_running=true
+        if have_cmd docker && docker_compose_cmd >/dev/null 2>&1; then
+          echo "Frontend container not running; starting frontend service for tests..."
+          local dc
+          dc="$(docker_compose_cmd)"
+          if (cd "$STACK_DIR" && $dc up -d frontend >/dev/null 2>&1); then
+            if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx openfdd_frontend; then
+              frontend_running=true
+            fi
           fi
         fi
       fi

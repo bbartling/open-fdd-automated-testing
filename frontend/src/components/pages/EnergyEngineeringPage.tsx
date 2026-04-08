@@ -454,15 +454,18 @@ function EnergyCalculationWorkbench() {
     mutationFn: async () => {
       if (!selectedSiteId) throw new Error("Select a site first.");
       if (!activeSpec) throw new Error("No calculation type selected.");
-      let point_bindings: Record<string, unknown> = {};
+      let point_bindings: Record<string, unknown>;
       try {
-        const parsed = JSON.parse(pointBindingsText || "{}");
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          point_bindings = parsed as Record<string, unknown>;
+        const parsed = JSON.parse(pointBindingsText.trim() === "" ? "{}" : pointBindingsText);
+        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new Error("Point bindings must be a JSON object.");
         }
-      } catch {
-        // JSON.parse failed; surface a single clear validation error (parse details omitted).
-        throw new Error("Point bindings must be valid JSON object.");
+        point_bindings = parsed as Record<string, unknown>;
+      } catch (e) {
+        if (e instanceof SyntaxError) {
+          throw new Error(`Point bindings: invalid JSON (${e.message})`);
+        }
+        throw e;
       }
       const parameters = buildParametersFromForm(activeSpec.fields, mergedParamValues);
       const ext = externalId.trim() || slugFromName(name);

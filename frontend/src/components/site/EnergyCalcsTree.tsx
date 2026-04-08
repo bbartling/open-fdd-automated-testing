@@ -8,7 +8,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import type { EnergyCalculation, Equipment } from "@/types/api";
-import { Box, ChevronDown, ChevronRight, Layers, Zap, ZapOff } from "lucide-react";
+import { Box, ChevronDown, ChevronRight, Layers, MoreVertical, Zap, ZapOff } from "lucide-react";
 
 type CalcLeaf = { type: "calc"; calc: EnergyCalculation };
 type FolderNode = {
@@ -143,6 +143,10 @@ export function EnergyCalcsTree({
     setMenu({ x: e.clientX, y: e.clientY, calc });
   }, []);
 
+  const openCalcMenuAt = useCallback((calc: EnergyCalculation, clientX: number, clientY: number) => {
+    setMenu({ x: clientX, y: clientY, calc });
+  }, []);
+
   if (calculations.length === 0 && equipment.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -169,6 +173,9 @@ export function EnergyCalcsTree({
             <TableHead className="min-w-[200px]">Name / id</TableHead>
             <TableHead className="min-w-[160px]">Calc type</TableHead>
             <TableHead className="w-[90px]">State</TableHead>
+            <TableHead className="w-10 p-2 text-center">
+              <span className="sr-only">Actions</span>
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -184,6 +191,7 @@ export function EnergyCalcsTree({
                 onToggle={toggle}
                 Icon={Icon}
                 onCalcContextMenu={handleCalcContextMenu}
+                onOpenCalcMenu={openCalcMenuAt}
                 menuCalcId={menu?.calc.id ?? null}
               />
             );
@@ -260,6 +268,7 @@ function FolderBlock({
   onToggle,
   Icon,
   onCalcContextMenu,
+  onOpenCalcMenu,
   menuCalcId,
 }: {
   folder: FolderNode;
@@ -268,6 +277,7 @@ function FolderBlock({
   onToggle: (id: string) => void;
   Icon: typeof Box;
   onCalcContextMenu: (e: React.MouseEvent, calc: EnergyCalculation) => void;
+  onOpenCalcMenu: (calc: EnergyCalculation, clientX: number, clientY: number) => void;
   menuCalcId: string | null;
 }) {
   const indent = depth * 18;
@@ -308,15 +318,13 @@ function FolderBlock({
             <span className="text-muted-foreground text-xs tabular-nums">({count})</span>
           </span>
         </TableCell>
-        <TableCell colSpan={2} />
+        <TableCell colSpan={3} />
       </TableRow>
       {open &&
         folder.children.map(({ calc }) => (
           <TableRow
             key={calc.id}
             className="border-border/40"
-            aria-haspopup="menu"
-            aria-expanded={menuCalcId === calc.id}
             onContextMenu={(e) => onCalcContextMenu(e, calc)}
           >
             <TableCell className="w-[28px]" style={{ paddingLeft: 12 + indent + 18 }} />
@@ -337,6 +345,22 @@ function FolderBlock({
                   off
                 </span>
               )}
+            </TableCell>
+            <TableCell className="w-10 p-1 text-center">
+              <button
+                type="button"
+                className="inline-flex rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label={`Actions for ${calc.name}`}
+                aria-haspopup="menu"
+                aria-expanded={menuCalcId === calc.id}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const r = e.currentTarget.getBoundingClientRect();
+                  onOpenCalcMenu(calc, r.left, Math.min(r.bottom + 4, window.innerHeight - 120));
+                }}
+              >
+                <MoreVertical className="h-4 w-4" aria-hidden />
+              </button>
             </TableCell>
           </TableRow>
         ))}
