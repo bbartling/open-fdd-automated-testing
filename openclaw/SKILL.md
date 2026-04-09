@@ -1,11 +1,11 @@
 ---
 name: open-fdd-lab
-description: Open-FDD / AFDD OpenClaw skill for testing-first bench work, AI-assisted data modeling, BRICK/SPARQL/BACnet validation, frontend/API parity checks, bootstrap-mode verification, and issue-quality defect triage in `open-fdd-afdd-stack/openclaw`. Use when validating a live Open-FDD deployment or bench, preparing AI-generated data-model payloads, running generic LAN health checks, classifying test failures, or maintaining the OpenClaw-side testing context/docs/scripts for Open-FDD projects.
+description: Open-FDD / AFDD OpenClaw skill for testing-first bench work, AI-assisted data modeling, BRICK/SPARQL/BACnet/Modbus validation, frontend/API parity checks, bootstrap-mode verification, fake-device benching, and issue-quality defect triage in `open-fdd-afdd-stack/openclaw`. Use when validating a live Open-FDD deployment or bench, preparing AI-generated data-model payloads, exercising BACnet or Modbus read paths, running generic LAN health checks, classifying test failures, or maintaining the OpenClaw-side testing context/docs/scripts for Open-FDD projects.
 ---
 
 # Open-FDD OpenClaw skill
 
-Treat OpenClaw as a **tester, modeler, and evidence collector** for Open-FDD.
+Treat OpenClaw as a **tester, modeler, and evidence collector** for Open-FDD and the AFDD stack.
 
 Default mission order:
 1. verify the live system that exists
@@ -31,6 +31,25 @@ When direct host access is unavailable, fall back to:
 - exported/imported payload review
 - BRICK/SPARQL reasoning from available files or API output
 - clear requests to the human for missing secrets or host-only evidence
+
+## Repo boundary (keep this straight)
+
+Current split:
+- `open-fdd` = engine-only repo / package / expression-rule ownership
+- `open-fdd-afdd-stack` = full stack repo / frontend / API / gateway / data-model / OpenClaw bench assets
+
+Treat these as stack concerns here:
+- frontend workflows
+- API and gateway behavior
+- `modbus_config`
+- fake-device benching
+- data-model import/export parity
+- Energy Engineering UI/API behavior
+
+Treat these as engine concerns elsewhere:
+- expression-rule cookbook ownership
+- RuleRunner semantics
+- engine-only rule/input behavior
 
 ## Strong current use case: AI-assisted data modeling
 
@@ -111,6 +130,22 @@ Start with:
 
 Use those before inventing one-off curl sequences.
 
+## Modbus bench guidance
+
+When the task involves new Modbus feature validation, fake devices, or point-model imports:
+- read `openclaw/bench/README_modbus_fake_device.md`
+- use `openclaw/bench/scripts/fake_modbus_device.py`
+- adapt `openclaw/bench/modbus_fake_device_sample.json` instead of inventing a fresh fake site from scratch
+
+Default Modbus validation order:
+1. raw local read proof against the fake device
+2. gateway `/modbus/read_registers` proof
+3. backend proxy proof
+4. frontend Modbus tab proof
+5. live import/polling/SPARQL parity on a clearly fake site
+
+Do not mutate a shared live bench with fake points unless the human asked for it or the cleanup plan is explicit.
+
 ## OpenClaw/Open-FDD role split
 
 Default near-term split:
@@ -127,4 +162,5 @@ OpenClaw may edit the `openclaw/` area when asked to improve testing context, pr
 4. `openclaw/references/testing_layers.md`
 5. `openclaw/references/generic_lan_testing.md`
 6. `openclaw/references/frontend_testing.md`
-7. `openclaw/references/long_run_lab_pass.md` when running longer test loops
+7. `openclaw/bench/README_modbus_fake_device.md` when Modbus or fake-device work is involved
+8. `openclaw/references/long_run_lab_pass.md` when running longer test loops

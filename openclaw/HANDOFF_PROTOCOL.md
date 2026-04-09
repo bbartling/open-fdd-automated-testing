@@ -6,6 +6,7 @@ OpenClaw and Cursor do not talk to each other directly. The shared ground truth 
 - `openclaw/logs/bootstrap-test-*.txt` — full command transcripts
 - `openclaw/README.md` — OpenClaw-side operating notes
 - `openclaw/references/generic_lan_testing.md` — host-agnostic test procedures
+- `openclaw/bench/README_modbus_fake_device.md` — fake Modbus bench procedure when Modbus is in scope
 
 ## Default mission posture
 
@@ -13,6 +14,7 @@ OpenClaw is testing-first for Open-FDD:
 - external web app and API verification
 - BRICK/SPARQL/data-model parity checks
 - BACnet add-to-model and live-read validation
+- Modbus fake-device, gateway, and add-to-model validation
 - AI-assisted data-model payload review and refinement
 - overnight scrape/FDD/hot-reload review
 - issue filing for confirmed product defects
@@ -20,6 +22,14 @@ OpenClaw is testing-first for Open-FDD:
 Repo-local source editing is optional and only when explicitly requested.
 
 Do not treat clone-first local development as the baseline OpenClaw workflow.
+
+## Repo boundary (important)
+
+Keep the repo split explicit in handoffs:
+- `open-fdd` = engine-only repo / expression-rule ownership
+- `open-fdd-afdd-stack` = frontend / API / gateway / data-model / OpenClaw bench assets
+
+Do not leave stack-side notes that imply the expression-rule cookbook or other engine-only references belong here long term.
 
 ## Access assumptions (important)
 
@@ -121,6 +131,19 @@ That procedure is the default for:
 - remote deployments
 - unknown LANs
 - cases where the OpenClaw instance is not running on the Open-FDD host
+
+## Modbus procedure when Modbus is in scope
+
+Use `openclaw/bench/README_modbus_fake_device.md` plus:
+- `openclaw/bench/scripts/fake_modbus_device.py`
+- `openclaw/bench/modbus_fake_device_sample.json`
+
+Preferred order:
+1. prove raw local reads against the fake device
+2. prove gateway `/modbus/read_registers`
+3. prove backend proxy read path
+4. prove frontend Modbus tab behavior
+5. only then import fake points into a clearly fake site and verify polling / TTL / SPARQL parity
 
 ## Host-aware procedure when SSH is available
 

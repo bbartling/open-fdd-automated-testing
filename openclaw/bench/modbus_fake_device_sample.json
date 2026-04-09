@@ -1,0 +1,210 @@
+{
+  "site_name": "Ben Fake Modbus Building",
+  "sites": [
+    {
+      "name": "Ben Fake Modbus Building",
+      "description": "Small pretend building for Open-FDD Modbus + energy engineering bench testing"
+    }
+  ],
+  "equipment": [
+    {
+      "site_name": "Ben Fake Modbus Building",
+      "name": "RTU-1",
+      "equipment_type": "AHU",
+      "brick_type": "Air_Handler_Unit",
+      "description": "Fake Modbus RTU/AHU"
+    },
+    {
+      "site_name": "Ben Fake Modbus Building",
+      "name": "Power_Meter_1",
+      "equipment_type": "Meter",
+      "brick_type": "Electric_Meter",
+      "description": "Fake Modbus power meter"
+    }
+  ],
+  "points": [
+    {
+      "site_name": "Ben Fake Modbus Building",
+      "equipment_name": "RTU-1",
+      "external_id": "outside_air_temperature_sensor",
+      "fdd_input": "outside_air_temperature_sensor",
+      "brick_type": "Outside_Air_Temperature_Sensor",
+      "unit": "degF",
+      "polling": true,
+      "description": "Outdoor air temperature",
+      "modbus_config": {
+        "host": "127.0.0.1",
+        "port": 1502,
+        "unit_id": 1,
+        "timeout": 5,
+        "address": 0,
+        "count": 2,
+        "function": "holding",
+        "decode": "float32",
+        "label": "Outside Air Temp"
+      }
+    },
+    {
+      "site_name": "Ben Fake Modbus Building",
+      "equipment_name": "RTU-1",
+      "external_id": "supply_air_temperature_sensor",
+      "fdd_input": "supply_air_temperature_sensor",
+      "brick_type": "Supply_Air_Temperature_Sensor",
+      "unit": "degF",
+      "polling": true,
+      "description": "Supply air temperature",
+      "modbus_config": {
+        "host": "127.0.0.1",
+        "port": 1502,
+        "unit_id": 1,
+        "timeout": 5,
+        "address": 6,
+        "count": 2,
+        "function": "holding",
+        "decode": "float32",
+        "label": "Supply Air Temp"
+      }
+    },
+    {
+      "site_name": "Ben Fake Modbus Building",
+      "equipment_name": "RTU-1",
+      "external_id": "supply_fan_status",
+      "fdd_input": "supply_fan_status",
+      "brick_type": "Fan_Status",
+      "unit": "bool-ish",
+      "polling": true,
+      "description": "Use fan_on threshold example 0.01 in rules",
+      "modbus_config": {
+        "host": "127.0.0.1",
+        "port": 1502,
+        "unit_id": 1,
+        "timeout": 5,
+        "address": 10,
+        "count": 2,
+        "function": "holding",
+        "decode": "float32",
+        "label": "Supply Fan Status"
+      }
+    },
+    {
+      "site_name": "Ben Fake Modbus Building",
+      "equipment_name": "RTU-1",
+      "external_id": "occupied_schedule",
+      "fdd_input": "occupied_schedule",
+      "brick_type": "Schedule_Status",
+      "unit": "bool-ish",
+      "polling": true,
+      "description": "Weekdays Mon-Fri 8-17 compressed time profile",
+      "modbus_config": {
+        "host": "127.0.0.1",
+        "port": 1502,
+        "unit_id": 1,
+        "timeout": 5,
+        "address": 100,
+        "count": 2,
+        "function": "input",
+        "decode": "float32",
+        "label": "Occupied Schedule"
+      }
+    },
+    {
+      "site_name": "Ben Fake Modbus Building",
+      "equipment_name": "Power_Meter_1",
+      "external_id": "ahu_power_kw",
+      "fdd_input": "ahu_power_kw",
+      "brick_type": "Power_Sensor",
+      "unit": "kW",
+      "polling": true,
+      "description": "AHU electric demand",
+      "modbus_config": {
+        "host": "127.0.0.1",
+        "port": 1502,
+        "unit_id": 1,
+        "timeout": 5,
+        "address": 20,
+        "count": 2,
+        "function": "holding",
+        "decode": "float32",
+        "label": "AHU Electric Power"
+      }
+    },
+    {
+      "site_name": "Ben Fake Modbus Building",
+      "equipment_name": "Power_Meter_1",
+      "external_id": "ahu_energy_kwh",
+      "fdd_input": "ahu_energy_kwh",
+      "brick_type": "Energy_Sensor",
+      "unit": "kWh",
+      "polling": true,
+      "description": "Accumulated AHU energy",
+      "modbus_config": {
+        "host": "127.0.0.1",
+        "port": 1502,
+        "unit_id": 1,
+        "timeout": 5,
+        "address": 22,
+        "count": 2,
+        "function": "holding",
+        "decode": "float32",
+        "label": "AHU Electric Energy"
+      }
+    },
+    {
+      "site_name": "Ben Fake Modbus Building",
+      "equipment_name": "Power_Meter_1",
+      "external_id": "energy_cost_usd",
+      "fdd_input": "energy_cost_usd",
+      "brick_type": "Cost_Sensor",
+      "unit": "USD",
+      "polling": true,
+      "description": "Accumulated energy cost",
+      "modbus_config": {
+        "host": "127.0.0.1",
+        "port": 1502,
+        "unit_id": 1,
+        "timeout": 5,
+        "address": 24,
+        "count": 2,
+        "function": "holding",
+        "decode": "float32",
+        "label": "Energy Cost"
+      }
+    },
+    {
+      "site_name": "Ben Fake Modbus Building",
+      "equipment_name": "Power_Meter_1",
+      "external_id": "energy_rate_usd_per_kwh",
+      "fdd_input": "energy_rate_usd_per_kwh",
+      "brick_type": "Price_Sensor",
+      "unit": "USD/kWh",
+      "polling": true,
+      "description": "TOU-like electric rate",
+      "modbus_config": {
+        "host": "127.0.0.1",
+        "port": 1502,
+        "unit_id": 1,
+        "timeout": 5,
+        "address": 106,
+        "count": 2,
+        "function": "input",
+        "decode": "float32",
+        "label": "Energy Rate"
+      }
+    }
+  ],
+  "energy_calculations": [
+    {
+      "external_id": "rtu1_estimated_energy_cost",
+      "name": "RTU-1 estimated energy cost",
+      "site_name": "Ben Fake Modbus Building",
+      "equipment_name": "Power_Meter_1",
+      "calc_type": "expression",
+      "enabled": true,
+      "parameters": {
+        "expression": "ahu_energy_kwh * energy_rate_usd_per_kwh",
+        "output_unit": "USD",
+        "notes": "Useful AI-assisted round-trip/import-export contract smoke test"
+      }
+    }
+  ]
+}

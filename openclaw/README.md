@@ -7,6 +7,7 @@ Use OpenClaw as a commissioning-minded tester and model-quality reviewer for a r
 - frontend/API parity checks
 - BRICK/RDF model validation
 - BACnet add-to-model and live read verification
+- Modbus add-to-model and live read verification
 - AI-assisted data-model payload review and refinement
 - bootstrap-mode verification (HTTP vs self-signed TLS)
 - overnight scrape/FDD/hot-reload review
@@ -38,10 +39,15 @@ Near-term default:
 - OpenClaw = tester, reproducer, evidence collector, AI-assisted model reviewer
 - product code changes = human / Cursor / engineer unless explicitly delegated
 
+Current repo boundary:
+- `open-fdd` = engine-only repo / expression-rule ownership
+- `open-fdd-afdd-stack` = frontend / API / gateway / data-model / OpenClaw bench assets
+
 High-value OpenClaw work now includes:
 - validating AI-generated site/equipment/point payloads
 - checking BRICK classing/tagging/topology
 - checking BACnet references for plausibility and live-read proof when possible
+- checking Modbus fake-device, gateway, and point-model workflows
 - confirming whether imports, exports, and UI views match model intent
 
 ## Current bench reality (keep this straight)
@@ -144,6 +150,9 @@ Those tools are intentionally host-parameterized instead of hardcoded to a singl
 | [`bench/e2e/`](bench/e2e/) | Frontend regression, Selenium, long-run suites. |
 | [`bench/sparql/`](bench/sparql/) | SPARQL parity and graph checks. |
 | [`bench/fake_bacnet_devices/`](bench/fake_bacnet_devices/) | BACnet fixture devices and validation runs. |
+| [`bench/scripts/fake_modbus_device.py`](bench/scripts/fake_modbus_device.py) | Standard-library fake Modbus TCP device for point-model and gateway testing. |
+| [`bench/modbus_fake_device_sample.json`](bench/modbus_fake_device_sample.json) | Sample fake Modbus site/equipment/point import payload. |
+| [`bench/README_modbus_fake_device.md`](bench/README_modbus_fake_device.md) | How to use the fake Modbus harness safely. |
 | [`bench/rules_reference/`](bench/rules_reference/) | Reference rules for testing/cookbooks (not auto-live). |
 | [`references/`](references/) | Stable protocol/checklist references for agents. |
 | [`scripts/`](scripts/) | Reusable host-side helper scripts and generic LAN probes. |
@@ -167,4 +176,16 @@ Those tools are intentionally host-parameterized instead of hardcoded to a singl
 ./scripts/bootstrap.sh --mode model
 ./scripts/bootstrap.sh --mode engine
 ./openclaw/scripts/probe_openfdd_lan.sh --host 192.168.1.50 --mode auto
+python openclaw/bench/scripts/fake_modbus_device.py --print-map
+python openclaw/bench/scripts/fake_modbus_device.py --host 127.0.0.1 --port 1502 --unit-id 1
 ```
+
+## Clone-friendly defaults for new OpenClaw instances
+
+When spawning a new OpenClaw instance for Open-FDD work, default it to this posture:
+- treat the stack as **externally running** until proven local
+- read `SKILL.md`, `HANDOFF_PROTOCOL.md`, `README.md`, and the latest `issues_log.md` section first
+- use generic LAN probes before one-off curls
+- use the fake Modbus harness before inventing a new Modbus fixture
+- keep site-specific secrets and bench-only notes out of committed repo files
+- promote reusable lessons into `openclaw/` so the next clone starts smarter

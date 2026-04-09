@@ -5,8 +5,9 @@ Canonical skill source: `openclaw/SKILL.md` in this repo.
 Install this skill when you want an OpenClaw instance to help with:
 - Open-FDD bench / deployment testing
 - AI-assisted data modeling
-- BRICK/SPARQL/BACnet validation
+- BRICK/SPARQL/BACnet/Modbus validation
 - generic LAN health probing
+- fake-device benching for new stack features
 - OpenClaw-side context and testing-script maintenance for Open-FDD
 
 ## Paths OpenClaw resolves
@@ -32,6 +33,11 @@ If you want a thinner copy, keep at least:
 - `HANDOFF_PROTOCOL.md`
 - `references/`
 - `scripts/`
+
+For Modbus-capable clones, also keep:
+- `bench/README_modbus_fake_device.md`
+- `bench/scripts/fake_modbus_device.py`
+- `bench/modbus_fake_device_sample.json`
 
 ## Verify
 

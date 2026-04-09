@@ -1,6 +1,6 @@
 # Long-run lab pass (OpenClaw) — backed up with the skill
 
-This file is **versioned in git** (`open-fdd/openclaw/references/` on GitHub). The Control UI chat is **not** durable; this runbook + **`issues_log.md`** are.
+This file is **versioned in git** (`open-fdd-afdd-stack/openclaw/references/` on GitHub). The Control UI chat is **not** durable; this runbook + **`issues_log.md`** are.
 
 ## Reality check
 
