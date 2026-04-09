@@ -5,7 +5,7 @@ WORKDIR /app
 
 COPY pyproject.toml README.md MANIFEST.in ./
 COPY openfdd_stack ./openfdd_stack
-RUN pip install --no-cache-dir "open-fdd>=2.1.0" \
+RUN pip install --no-cache-dir "open-fdd>=2.3.0" \
  && pip install --no-cache-dir .
 
 CMD ["python", "-u", "-m", "openfdd_stack.platform.drivers.run_rule_loop", "--loop"]
