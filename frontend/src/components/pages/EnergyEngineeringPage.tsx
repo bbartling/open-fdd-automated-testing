@@ -833,6 +833,8 @@ export function EnergyEngineeringPage() {
     const t = searchParams.get("tab");
     if (t === "metadata" || t === "energy") {
       setTabState(t);
+    } else {
+      setTabState("energy");
     }
   }, [searchParams]);
 

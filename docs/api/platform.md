@@ -292,7 +292,7 @@ System resource metrics for the React **System resources** page (and optional Gr
 |----------|--------------|
 | `GET /analytics/system/host` | Latest host metrics per hostname (mem_used_gb, mem_available_gb, load_1/5/15, swap_used_gb). |
 | `GET /analytics/system/host/series?from_ts=&to_ts=` | Time series of host memory and load for charts (ISO datetimes). |
-| `GET /analytics/system/containers` | Latest row per container (cpu_pct, mem_mb, mem_pct, pids). |
+| `GET /analytics/system/containers` | Running containers from the latest host-stats scrape only (cpu_pct, mem_mb, mem_pct, pids); aligns with `docker ps`, unlike raw “latest row per name” over all history. |
 | `GET /analytics/system/containers/series?from_ts=&to_ts=` | Time series of container memory (MB) and CPU % for charts. |
 | `GET /analytics/system/disk` | Latest disk usage per host/mount (used_gb, free_gb, total_gb, used_pct). |
 

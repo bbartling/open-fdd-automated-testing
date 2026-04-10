@@ -1,5 +1,7 @@
 # Open-FDD AFDD stack
 
+> **Deprecated (AFDD platform)** — Active development of the Docker AFDD stack (Compose, API, BACnet scrapers, React UI, `bootstrap.sh`) now lives in the **[open-fdd monorepo](https://github.com/bbartling/open-fdd)** under **`afdd_stack/`**. Clone that repository and run **`./afdd_stack/scripts/bootstrap.sh`** from the repo root. Documentation is published with the engine at **[bbartling.github.io/open-fdd](https://bbartling.github.io/open-fdd/)**. This **`open-fdd-afdd-stack`** repository is retained only for history and inbound links; do not start new work here. The **`open-fdd`** package on **[PyPI](https://pypi.org/project/open-fdd/)** remains the published rules engine.
+
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2.svg?logo=discord&logoColor=white)](https://discord.gg/Ta48yQF8fC)
 [![CI](https://github.com/bbartling/open-fdd-afdd-stack/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bbartling/open-fdd-afdd-stack/actions/workflows/ci.yml)
 ![MIT License](https://img.shields.io/badge/license-MIT-green.svg)
@@ -15,7 +17,7 @@
 
 Open-FDD is an open-source knowledge graph fault-detection platform for HVAC systems that helps facilities optimize their energy usage and cost-savings. Because it runs on-prem, facilities never have to worry about a vendor hiking prices, going dark, or walking away with their data. The platform is an AFDD stack designed to run inside the building, behind the firewall, under the owner’s control. It transforms operational data into actionable, cost-saving insights and provides a secure integration layer that any cloud platform can use without vendor lock-in. U.S. Department of Energy research reports median energy savings of roughly 8–9% from FDD programs—meaningful annual savings depending on facility size and energy spend.
 
-This repository is the **full on-prem AFDD platform**, which bootstraps entirely with Docker and runs the **rules engine** installed from **[`open-fdd` on PyPI](https://pypi.org/project/open-fdd/)**.
+The content that used to live here is now **`afdd_stack/`** in **[bbartling/open-fdd](https://github.com/bbartling/open-fdd)**. The README below is **legacy**; prefer the monorepo. The **rules engine** is still **[`open-fdd` on PyPI](https://pypi.org/project/open-fdd/)**.
 
 
 ---

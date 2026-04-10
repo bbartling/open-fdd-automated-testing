@@ -666,6 +666,18 @@ def _invalid_modbus_config_import_exc(
     )
 
 
+def _modbus_normalize_value_error_exc(
+    *, point_id: str | None, external_id: str | None, exc: ValueError
+) -> HTTPException:
+    """normalize_modbus_config raises ValueError for some operator errors (e.g. multi-register batch)."""
+    return HTTPException(
+        status_code=422,
+        detail=(
+            f"Invalid modbus_config (point_id={point_id!r}, external_id={external_id!r}): {exc}"
+        ),
+    )
+
+
 def _upsert_equipment_metadata(
     cur: Any,
     equipment_id: str,
@@ -717,7 +729,16 @@ def _create_or_upsert_without_point_id(
         effective_site_id = _resolve_site_id_by_name(cur, point_row.site_name)
 
     mc = point_row.modbus_config
-    mc_norm = normalize_modbus_config(mc) if isinstance(mc, dict) else None
+    mc_norm = None
+    if isinstance(mc, dict):
+        try:
+            mc_norm = normalize_modbus_config(mc)
+        except ValueError as e:
+            raise _modbus_normalize_value_error_exc(
+                point_id=point_row.point_id,
+                external_id=point_row.external_id,
+                exc=e,
+            ) from e
     if isinstance(mc, dict) and mc and mc_norm is None:
         raise _invalid_modbus_config_import_exc(
             point_id=point_row.point_id,
@@ -1032,7 +1053,14 @@ def import_data_model(body: DataModelImportBody):
                             updates.append("modbus_config = %s")
                             params.append(None)
                         else:
-                            _nmc = normalize_modbus_config(row.modbus_config)
+                            try:
+                                _nmc = normalize_modbus_config(row.modbus_config)
+                            except ValueError as e:
+                                raise _modbus_normalize_value_error_exc(
+                                    point_id=row.point_id,
+                                    external_id=row.external_id,
+                                    exc=e,
+                                ) from e
                             if _nmc is None:
                                 raise _invalid_modbus_config_import_exc(
                                     point_id=row.point_id,

@@ -834,15 +834,24 @@ def get_system_host_series(
 
 @router.get("/system/containers", summary="Latest container metrics (table)")
 def get_system_containers():
-    """Latest row per container from container_metrics. For React system resources table."""
+    """Latest row per container from the most recent host-stats scrape only.
+
+    Host-stats writes all running containers in one batch with the same ``ts``.
+    Older names (containers since removed) keep their last row in the hypertable
+    for retention/Grafana; this query matches ``docker ps`` by restricting to
+    rows at ``MAX(ts)`` so removed containers disappear from the UI table.
+    """
     if not _table_exists("container_metrics"):
         return {"containers": []}
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT DISTINCT ON (container_name) container_name, ts,
-                  cpu_pct, mem_usage_bytes, mem_limit_bytes, mem_pct, pids
-                FROM container_metrics ORDER BY container_name, ts DESC
+                WITH latest AS (SELECT MAX(ts) AS ts FROM container_metrics)
+                SELECT DISTINCT ON (c.container_name) c.container_name, c.ts,
+                  c.cpu_pct, c.mem_usage_bytes, c.mem_limit_bytes, c.mem_pct, c.pids
+                FROM container_metrics c
+                INNER JOIN latest l ON c.ts = l.ts
+                ORDER BY c.container_name, c.ts DESC
                 """)
             rows = cur.fetchall()
     return {
