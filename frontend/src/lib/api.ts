@@ -35,6 +35,20 @@ function buildUrl(path: string): string {
   return apiBase ? `${apiBase}${normalized}` : normalized;
 }
 
+/** Same URL `fetch` will use (for Stack-strip / BACnet console diagnostics). */
+export function resolveApiUrl(path: string): string {
+  if (typeof window === "undefined") {
+    return buildUrl(path);
+  }
+  const rel = buildUrl(path);
+  if (/^https?:\/\//.test(rel)) return rel;
+  try {
+    return new URL(rel, window.location.origin).href;
+  } catch {
+    return rel;
+  }
+}
+
 function stringifyUnknown(value: unknown): string {
   if (value == null) return "";
   if (typeof value === "string") return value;

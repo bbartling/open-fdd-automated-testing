@@ -17,6 +17,7 @@ from typing import Optional
 from uuid import UUID
 
 from openfdd_stack.platform.bacnet_gateway_auth import bacnet_gateway_request_headers
+from openfdd_stack.platform.bacnet_host_gateway import bacnet_rpc_base_candidates
 from openfdd_stack.platform.database import get_conn
 from openfdd_stack.platform.config import get_platform_settings
 from openfdd_stack.platform.site_resolver import resolve_site_uuid
@@ -127,7 +128,8 @@ async def _scrape_via_rpc(
             "errors": ["OFDD_BACNET_SERVER_URL not set"],
         }
 
-    rpc_base = url.rstrip("/")
+    rpc_candidates = bacnet_rpc_base_candidates(url)
+    rpc_base = rpc_candidates[0] if rpc_candidates else url.rstrip("/")
     errors: list[str] = []
     # (ts, site_uuid, external_id, value, bacnet_device_id, object_identifier, point_id or None)
     readings: list[tuple[datetime, str, str, float, str, str, Optional[int]]] = []
@@ -166,24 +168,33 @@ async def _scrape_via_rpc(
             return {"rows_inserted": 0, "points_created": 0, "errors": [str(db_err)]}
 
     gw_headers = bacnet_gateway_request_headers()
-    async with httpx.AsyncClient(timeout=30.0, headers=gw_headers) as client:
-        # Verify diy-bacnet-server is reachable (path = /method for fastapi-jsonrpc)
-        try:
-            hello = await client.post(
-                f"{rpc_base}/server_hello",
-                json={
-                    "jsonrpc": "2.0",
-                    "id": "0",
-                    "method": "server_hello",
-                    "params": {},
-                },
+    async with httpx.AsyncClient(timeout=30.0, headers=gw_headers, trust_env=False) as client:
+        # Verify diy-bacnet-server is reachable (path = /method for fastapi-jsonrpc).
+        # Try Docker bridge gateway when host.docker.internal times out (Linux + network_mode: host gateway).
+        for cand in rpc_candidates:
+            try:
+                hello = await client.post(
+                    f"{cand}/server_hello",
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": "0",
+                        "method": "server_hello",
+                        "params": {},
+                    },
+                    timeout=8.0,
+                )
+                if hello.status_code == 200:
+                    rpc_base = cand
+                    logger.info("diy-bacnet-server reachable: %s", rpc_base)
+                    break
+            except Exception as e:
+                logger.warning("diy-bacnet-server probe %s: %s", cand, e)
+        else:
+            logger.warning(
+                "diy-bacnet-server server_hello failed for all candidates %s; continuing with %s",
+                rpc_candidates,
+                rpc_base,
             )
-            if hello.status_code == 200:
-                logger.info("diy-bacnet-server reachable: %s", url)
-            else:
-                logger.warning("diy-bacnet-server returned %s", hello.status_code)
-        except Exception as e:
-            logger.warning("diy-bacnet-server unreachable: %s", e)
 
         for device_id_str, points in by_device.items():
             try:

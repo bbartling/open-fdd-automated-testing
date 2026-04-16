@@ -15,6 +15,7 @@ from typing import Any, Optional
 import httpx
 
 from openfdd_stack.platform.bacnet_gateway_auth import bacnet_gateway_request_headers
+from openfdd_stack.platform.bacnet_host_gateway import bacnet_rpc_base_candidates
 from openfdd_stack.platform.config import get_platform_settings
 from openfdd_stack.platform.database import get_conn
 from openfdd_stack.platform.modbus_point_config import normalize_modbus_config
@@ -151,6 +152,29 @@ def run_modbus_scrape_data_model(
     errors: list[str] = []
     pending_inserts: list[tuple[str, str, float]] = []
 
+    gw_headers = bacnet_gateway_request_headers()
+    gateway_candidates = bacnet_rpc_base_candidates(url)
+    gateway_base = gateway_candidates[0] if gateway_candidates else url
+    for cand in gateway_candidates:
+        try:
+            probe = httpx.post(
+                f"{cand}/server_hello",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": "0",
+                    "method": "server_hello",
+                    "params": {},
+                },
+                headers=gw_headers,
+                timeout=6.0,
+                trust_env=False,
+            )
+            if probe.is_success:
+                gateway_base = cand
+                break
+        except Exception:
+            continue
+
     for gk, pairs in groups.items():
         h, p, u = gk
         timeout = min(120.0, max(5.0, timeouts.get(gk, 5.0)))
@@ -164,10 +188,11 @@ def run_modbus_scrape_data_model(
         }
         try:
             r = httpx.post(
-                f"{url}/modbus/read_registers",
+                f"{gateway_base}/modbus/read_registers",
                 json=body,
                 timeout=timeout + 15.0,
-                headers=bacnet_gateway_request_headers(),
+                headers=gw_headers,
+                trust_env=False,
             )
             if not r.is_success:
                 errors.append(f"{h}:{p} unit {u}: HTTP {r.status_code}")

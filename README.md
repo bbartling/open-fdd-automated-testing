@@ -1,13 +1,12 @@
 # Open-FDD AFDD stack
 
-> **Deprecated (AFDD platform)** — Active development of the Docker AFDD stack (Compose, API, BACnet scrapers, React UI, `bootstrap.sh`) now lives in the **[open-fdd monorepo](https://github.com/bbartling/open-fdd)** under **`afdd_stack/`**. Clone that repository and run **`./afdd_stack/scripts/bootstrap.sh`** from the repo root. Documentation is published with the engine at **[bbartling.github.io/open-fdd](https://bbartling.github.io/open-fdd/)**. This **`open-fdd-afdd-stack`** repository is retained only for history and inbound links; do not start new work here. The **`open-fdd`** package on **[PyPI](https://pypi.org/project/open-fdd/)** remains the published rules engine.
-
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2.svg?logo=discord&logoColor=white)](https://discord.gg/Ta48yQF8fC)
 [![CI](https://github.com/bbartling/open-fdd-afdd-stack/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bbartling/open-fdd-afdd-stack/actions/workflows/ci.yml)
 ![MIT License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Development Status](https://img.shields.io/badge/status-Beta-blue)
 ![Python](https://img.shields.io/badge/Python-3.9+-blue?logo=python&logoColor=white)
 [![Engine (PyPI)](https://img.shields.io/pypi/v/open-fdd?label=engine%20(PyPI))](https://pypi.org/project/open-fdd/)
+[![Stack version](https://img.shields.io/badge/stack%20(pyproject.toml)-2.0.14-3776AB?labelColor=444)](https://github.com/bbartling/open-fdd-afdd-stack/blob/main/pyproject.toml)
 
 <div align="center">
 
@@ -90,6 +89,19 @@ printf '%s' 'YourSecurePassword' | ./scripts/bootstrap.sh \
   --user ben \
   --password-stdin
 ```
+
+**Dashboard “BACnet” status:** The strip is green when the **API container** can reach the DIY gateway (`OFDD_BACNET_SERVER_URL`, usually `http://host.docker.internal:8080` from compose). The knowledge graph (`config/data_model.ttl`, `ofdd:bacnetServerUrl`) may still say `http://localhost:8080` for local dev; **`OFDD_BACNET_SERVER_URL` in `stack/.env` always wins** over that value in containers so drivers and config stay aligned with Docker. **GET `/config`** merges the same env URL into the JSON for the UI so the Config screen matches runtime. Contract tests: `openfdd_stack/tests/platform/test_platform_config_contract.py`. The DIY BACnet service is usually **`network_mode: host`**, so it is **not** on the same Docker bridge as `api` / `frontend` — traffic is **host ↔ bridge** routing (and often firewall/hairpin rules), not ordinary “sibling container” DNS on the default network. On many Linux hosts **hairpin routing fails**: both `host.docker.internal` and the Docker bridge gateway (for example `172.19.0.1`) time out even though `curl http://localhost:8080/server_hello` on the host works. Fix it by passing **`OFDD_BACNET_ADDRESS`** into the API and scraper (compose does this from `stack/.env`) so the stack retries **`http://<that-LAN-IPv4>:8080`**, or set **`OFDD_BACNET_SERVER_URL`** explicitly in `stack/.env` to that URL. Bootstrap **`--bacnet-address`** writes both. **`./scripts/bootstrap.sh --verify`** and a **full** default bootstrap (when the host gateway responds on :8080) can **auto-write** `OFDD_BACNET_SERVER_URL` to the host’s default-route IPv4 (or the IPv4 from `OFDD_BACNET_ADDRESS` when set) and recreate **api** and **bacnet-scraper** so the API→gateway check passes without manual edits.
+
+**If every URL still times out** (including `http://<LAN-IP>:8080` after auto-fix): this is almost always **host firewall or routing** blocking **Docker bridge → host TCP :8080**, not a stale UI build. **Rebuilding the frontend container does not fix BACnet online** — the browser calls the API, and the API must open TCP to the gateway. Inspect **`sudo ufw status`**, **`nft`/`iptables` FORWARD** rules, and **`rp_filter`** / hairpin settings for the Docker bridge. Host-only curl can succeed while the UI is red if the frontend was talking to the wrong API host; use the app through **Caddy on port 80 or 8880** (recommended), not raw `:5173`, unless you know what you are doing. Raw **:5173** uses `vite preview` with `VITE_API_BASE=/api`: requests go to `/api/bacnet/…` and the preview proxy must **strip `/api`** before forwarding to Uvicorn (fixed in `frontend/vite.config.ts`); without that, the Stack strip shows API/BACnet offline even when the API is healthy.
+
+**Rebuild API + frontend after a git pull (normal operators):**
+
+```bash
+cd open-fdd-afdd-stack/stack
+docker compose build api frontend && docker compose up -d api frontend
+```
+
+Or one maintenance pass (pull, rebuild stack, optional tests): `./scripts/bootstrap.sh --maintenance --update --verify --force-rebuild` (add `--test` if you want pytest too).
 
 **LAN / firewall / ports:** See [Standard HTTP lab: remote LAN access](https://bbartling.github.io/open-fdd-afdd-stack/getting_started#standard-http-lab-remote-lan-access) in the Stack Docs (bearer keys in `stack/.env`, `http://` vs `https://`, ports **80** / **8880** / **8000**, and automatic **ufw**).
 

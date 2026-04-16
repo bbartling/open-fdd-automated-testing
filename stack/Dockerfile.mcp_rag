@@ -11,7 +11,7 @@ COPY docs /app/docs
 COPY pdf /app/pdf
 COPY stack /app/stack
 
-RUN pip install --no-cache-dir "open-fdd>=2.1.0" \
+RUN pip install --no-cache-dir "open-fdd>=2.3.1" \
  && pip install --no-cache-dir . \
  && chown -R appuser:appuser /app
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -75,18 +77,31 @@ class ConfigBody(BaseModel):
 
 
 def _normalize_config_for_display(raw: dict) -> dict:
-    """Apply display defaults: rule_interval_hours 0/None → 3.0; bacnet_gateways 'string' → ''."""
+    """Apply display defaults and reflect runtime env overrides.
+
+    ``OFDD_BACNET_SERVER_URL`` (set by Docker Compose / ``stack/.env``) overrides ``bacnet_server_url``
+    in the returned dict so GET /config matches what ``get_platform_settings()`` uses. Without this,
+    the graph often still has ``http://localhost:8080`` while containers use a LAN or
+    ``host.docker.internal`` URL — operators and UI drift from reality.
+    """
     out = dict(raw)
     if out.get("rule_interval_hours") in (0, None):
         out["rule_interval_hours"] = 3.0
     if out.get("bacnet_gateways") == "string":
         out["bacnet_gateways"] = ""
+    env_bs = (os.environ.get("OFDD_BACNET_SERVER_URL") or "").strip()
+    if env_bs:
+        out["bacnet_server_url"] = env_bs.rstrip("/")
     return out
 
 
 @router.get("", summary="Get platform config")
 def get_config():
-    """Return current platform config from the knowledge graph (same as used by SPARQL). When graph has no config, returns DEFAULT_PLATFORM_CONFIG. Normalizes rule_interval_hours 0→3 and bacnet_gateways 'string'→'' for display."""
+    """Return platform config for the Config UI (graph + display normalizations).
+
+    RDF / ``data_model.ttl`` is the persisted source of truth for PUT; ``OFDD_BACNET_SERVER_URL``
+    in the process environment is merged into the GET payload when set (see ``_normalize_config_for_display``).
+    """
     overlay = get_config_overlay()
     if overlay:
         return _normalize_config_for_display(overlay)

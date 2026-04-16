@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openfdd-afdd-stack"
-version = "0.1.0"
+version = "2.0.14"
 description = "Open-FDD AFDD platform — Docker, FastAPI, BACnet scrapers, Grafana (uses open-fdd from PyPI)"
 readme = "README.md"
 license = { text = "MIT" }
@@ -12,7 +12,7 @@ requires-python = ">=3.9"
 authors = [{ name = "Ben Bartling", email = "ben.bartling@gmail.com" }]
 dependencies = [
     # Pin to latest published engine on PyPI; bump lower bound after each open-fdd release.
-    "open-fdd>=2.0.13",
+    "open-fdd>=2.3.1",
     # Brick TTL → column_map (stack-only; not a dependency of the engine wheel).
     "rdflib>=7.5.0,<8",
     # rdflib 7.x + pyparsing 3.2+ can break SPARQL parsing; pin compatible range.

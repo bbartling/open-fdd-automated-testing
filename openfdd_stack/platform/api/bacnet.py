@@ -11,6 +11,7 @@ from fastapi import APIRouter, Body, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from openfdd_stack.platform.bacnet_gateway_auth import bacnet_gateway_request_headers
+from openfdd_stack.platform.bacnet_host_gateway import bacnet_rpc_base_candidates
 from openfdd_stack.platform.config import get_platform_settings
 from openfdd_stack.platform.database import get_conn
 from openfdd_stack.platform.graph_model import (
@@ -323,10 +324,19 @@ def _bacnet_proxy_url_or_error(
 
 
 def _normalized_gateway_allowlist() -> frozenset[str]:
-    """URLs that may receive OFDD_BACNET_SERVER_API_KEY (from GET /bacnet/gateways)."""
-    return frozenset(
-        str(g["url"]).strip().rstrip("/") for g in _get_gateways_list() if g.get("url")
-    )
+    """URLs that may receive OFDD_BACNET_SERVER_API_KEY (from GET /bacnet/gateways).
+
+    Includes Linux-Docker fallbacks (default gateway IP) when a configured URL uses
+    ``host.docker.internal`` so the proxy can try the same logical gateway on alternate paths.
+    """
+    urls: set[str] = set()
+    for g in _get_gateways_list():
+        u = str(g.get("url") or "").strip().rstrip("/")
+        if not u:
+            continue
+        for c in bacnet_rpc_base_candidates(u):
+            urls.add(c.strip().rstrip("/"))
+    return frozenset(urls)
 
 
 def _require_allowlisted_gateway_url(url: str) -> str:
@@ -364,8 +374,10 @@ def bacnet_gateways():
     return _get_gateways_list()
 
 
-def _post_rpc(base_url: str, method: str, params: dict, timeout: float = 10.0) -> dict:
-    """POST JSON-RPC to diy-bacnet-server; return full response or error."""
+def _post_rpc_once(
+    base_url: str, method: str, params: dict, timeout: float
+) -> dict:
+    """Single POST to one gateway base URL."""
     url = base_url.rstrip("/") + "/" + method
     payload = {**_BASE_PAYLOAD, "method": method, "params": params}
     try:
@@ -374,6 +386,9 @@ def _post_rpc(base_url: str, method: str, params: dict, timeout: float = 10.0) -
             json=payload,
             timeout=timeout,
             headers=bacnet_gateway_request_headers(),
+            # Never send local gateway traffic through HTTP(S)_PROXY from the container env;
+            # that breaks host.docker.internal / LAN BACnet URLs while curl from the host still works.
+            trust_env=False,
         )
         out = {"ok": r.is_success, "status_code": r.status_code}
         try:
@@ -385,6 +400,17 @@ def _post_rpc(base_url: str, method: str, params: dict, timeout: float = 10.0) -
         return out
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+def _post_rpc(base_url: str, method: str, params: dict, timeout: float = 10.0) -> dict:
+    """POST JSON-RPC to diy-bacnet-server; try Docker host fallbacks when host.docker.internal fails."""
+    last: dict = {"ok": False, "error": "no gateway URL candidates"}
+    for base in bacnet_rpc_base_candidates(base_url):
+        out = _post_rpc_once(base, method, params, timeout)
+        if out.get("ok"):
+            return out
+        last = out
+    return last
 
 
 @router.post("/server_hello", summary="BACnet server hello")
@@ -406,7 +432,7 @@ def bacnet_server_hello(
             return {"ok": False, "error": "Invalid URL"}
         url = _require_allowlisted_gateway_url(url)
         result = _post_rpc(url, "server_hello", {}, timeout=5.0)
-        if result.get("ok") and result.get("body"):
+        if result.get("ok") and "body" in result:
             return result
         # Gateway may not implement server_hello (e.g. only client_whois_range). Prove reachability with Who-Is.
         whois = _post_rpc(
@@ -421,7 +447,10 @@ def bacnet_server_hello(
                 "status_code": whois.get("status_code"),
                 "body": {"result": {"message": "Gateway reachable (whois)"}},
             }
-        return result
+        # Help operators distinguish browser→API URL from API→gateway (OFDD_BACNET_SERVER_URL / graph).
+        if isinstance(result, dict):
+            return {**result, "gateway_url": url}
+        return {"ok": False, "error": str(result), "gateway_url": url}
     except HTTPException:
         raise
     except Exception as e:
@@ -735,6 +764,7 @@ def bacnet_modbus_read_registers(
             json=fwd,
             timeout=timeout,
             headers=bacnet_gateway_request_headers(),
+            trust_env=False,
         )
         out: dict = {"ok": r.is_success, "status_code": r.status_code}
         try:

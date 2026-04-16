@@ -208,6 +208,8 @@ export interface MqttBridgeStatus {
 export interface BacnetServerHelloResponse {
   ok: boolean;
   status_code?: number;
+  /** When ok is false: DIY gateway base URL the API tried (from OFDD_BACNET_SERVER_URL or RDF). */
+  gateway_url?: string;
   body?: {
     result?: { message?: string; mqtt_bridge?: MqttBridgeStatus };
     error?: unknown;

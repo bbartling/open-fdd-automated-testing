@@ -848,6 +848,129 @@ env_file_set_kv() {
   fi
 }
 
+# First IPv4 in OFDD_BACNET_ADDRESS=192.168.1.10/24:47808 (stack/.env).
+stack_env_bacnet_bind_ipv4() {
+  local env_file="$1" line v
+  [[ -f "$env_file" ]] || return 1
+  line=$(grep -E '^OFDD_BACNET_ADDRESS=' "$env_file" 2>/dev/null | tail -1 || true)
+  [[ -n "$line" ]] || return 1
+  v="${line#OFDD_BACNET_ADDRESS=}"
+  v="${v//$'\r'/}"
+  if [[ "$v" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/ ]]; then
+    echo "${v%%/*}"
+    return 0
+  fi
+  return 1
+}
+
+infer_ipv4_default_route_src_linux() {
+  local s
+  if ! have_cmd ip; then
+    return 1
+  fi
+  s=$(ip -4 route get 8.8.8.8 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit } }' || true)
+  [[ -n "$s" ]] && echo "$s" && return 0
+  s=$(ip -4 route show default 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit } }' || true)
+  [[ -n "$s" ]] && echo "$s" && return 0
+  return 1
+}
+
+# Linux: API on the bridge cannot hairpin to host.docker.internal:8080 when bacnet-server uses network_mode:host.
+# If stack/.env still points at host.docker.internal (or omits the key so compose uses the default), rewrite to
+# http://<LAN-IPv4>:8080 and recreate api + bacnet-scraper. Returns 0 when a change was applied (caller should retry).
+repair_stack_env_bacnet_server_url_for_docker_hairpin() {
+  local ef="$STACK_DIR/.env" cur_line cur_val repair_ip inferred_url
+  [[ -f "$ef" ]] || touch "$ef"
+  cur_line=$(grep -E '^OFDD_BACNET_SERVER_URL=' "$ef" 2>/dev/null | tail -1 || true)
+  cur_val=""
+  [[ -n "$cur_line" ]] && cur_val="${cur_line#OFDD_BACNET_SERVER_URL=}"
+  cur_val="${cur_val//$'\r'/}"
+  if [[ -n "$cur_line" ]] && [[ "$cur_val" != *"host.docker.internal"* ]]; then
+    return 1
+  fi
+  repair_ip=""
+  if repair_ip="$(stack_env_bacnet_bind_ipv4 "$ef" 2>/dev/null)"; then
+    :
+  elif repair_ip="$(infer_ipv4_default_route_src_linux 2>/dev/null)"; then
+    :
+  else
+    return 1
+  fi
+  [[ -n "$repair_ip" ]] || return 1
+  inferred_url="http://${repair_ip}:8080"
+  if [[ "$cur_val" == "$inferred_url" ]]; then
+    return 1
+  fi
+  env_file_set_kv "$ef" "OFDD_BACNET_SERVER_URL" "$inferred_url"
+  echo "Auto-fix (BACnet API→gateway): wrote OFDD_BACNET_SERVER_URL=${inferred_url} in stack/.env (Linux Docker hairpin); recreating api and bacnet-scraper."
+  local dc
+  dc="$(docker_compose_cmd)" || return 1
+  (cd "$STACK_DIR" && $dc up -d api bacnet-scraper) || return 1
+  sleep 4
+  return 0
+}
+
+openfdd_api_gateway_check_once() {
+  docker exec -i openfdd_api python3 - <<'PYCHECK'
+import os
+import sys
+
+import httpx
+
+from openfdd_stack.platform.bacnet_host_gateway import bacnet_rpc_base_candidates
+
+primary = (os.environ.get("OFDD_BACNET_SERVER_URL") or "http://host.docker.internal:8080").rstrip(
+    "/"
+)
+headers = {}
+key = (os.environ.get("OFDD_BACNET_SERVER_API_KEY") or "").strip()
+if key:
+    headers["Authorization"] = "Bearer " + key
+payload = {"jsonrpc": "2.0", "id": "0", "method": "server_hello", "params": {}}
+last_err = None
+for base in bacnet_rpc_base_candidates(primary):
+    url = base + "/server_hello"
+    try:
+        r = httpx.post(url, json=payload, headers=headers, timeout=8.0, trust_env=False)
+    except Exception as exc:
+        last_err = exc
+        continue
+    if not r.is_success:
+        last_err = "HTTP %s %s" % (r.status_code, (r.text or "")[:120])
+        continue
+    try:
+        data = r.json()
+    except Exception:
+        last_err = "non-JSON"
+        continue
+    if isinstance(data, dict) and data.get("error"):
+        last_err = data.get("error")
+        continue
+    print("BACnet (API→gateway): OK via", base)
+    sys.exit(0)
+print("BACnet (API→gateway): FAIL —", last_err, "| tried:", bacnet_rpc_base_candidates(primary))
+sys.exit(1)
+PYCHECK
+}
+
+# When the DIY gateway responds on the host but the API container cannot reach it, fix stack/.env and recreate services.
+bootstrap_maybe_autofix_bacnet_api_gateway() {
+  if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx openfdd_api; then
+    return 0
+  fi
+  if ! curl -sf --max-time 3 -X POST http://127.0.0.1:8080/server_hello -H "Content-Type: application/json" \
+    -d '{"jsonrpc":"2.0","id":"0","method":"server_hello","params":{}}' >/dev/null 2>&1; then
+    return 0
+  fi
+  if openfdd_api_gateway_check_once; then
+    return 0
+  fi
+  if repair_stack_env_bacnet_server_url_for_docker_hairpin; then
+    openfdd_api_gateway_check_once || true
+  fi
+  return 0
+}
+
 # Compose interpolates ${OPENFDD_CADDYFILE:-...} with shell env before stack/.env file values.
 # This script sources stack/.env early (RETENTION_*, etc.); keys removed later (e.g. disable_caddy_self_signed_config)
 # would otherwise stay exported and keep Caddy on Caddyfile.selfsigned + leave Swagger disabled.
@@ -920,6 +1043,13 @@ apply_bacnet_gateway_cli_to_env() {
     env_file_set_kv "$f" "OFDD_BACNET_ADDRESS" "$BACNET_ADDRESS_CLI"
     echo "Wrote OFDD_BACNET_ADDRESS to stack/.env (BACnet/IP bind; dual-NIC / OT LAN)"
     BOOTSTRAP_RECREATE_BACNET=true
+    # Linux Docker hairpin: API/scraper cannot reach host.docker.internal:8080; LAN IP works.
+    if [[ "$BACNET_ADDRESS_CLI" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/ ]]; then
+      local _bacnet_ip="${BACNET_ADDRESS_CLI%%/*}"
+      env_file_set_kv "$f" "OFDD_BACNET_SERVER_URL" "http://${_bacnet_ip}:8080"
+      echo "Wrote OFDD_BACNET_SERVER_URL=http://${_bacnet_ip}:8080 (API/scraper → DIY gateway; edit stack/.env if you use a remote gateway URL)"
+      BOOTSTRAP_RECREATE_API_FRONTEND=true
+    fi
     # Standard no-TLS lab: expose API and frontend on all interfaces so LAN clients can use http://HOST:8000/docs and :5173.
     if ! $CADDY_SELF_SIGNED; then
       env_file_set_kv "$f" "OFDD_API_HOST_BIND" "0.0.0.0"
@@ -967,7 +1097,7 @@ bootstrap_detect_lan_ipv4() {
 bootstrap_read_api_host_bind_from_env_file() {
   local f="$STACK_DIR/.env"
   local v=""
-  v="$(grep -E '^OFDD_API_HOST_BIND=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\r')"
+  v="$(grep -E '^OFDD_API_HOST_BIND=' "$f" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\r')" || true
   v="${v//\'}"
   v="${v//\"}"
   printf '%s' "${v:-127.0.0.1}"
@@ -977,7 +1107,7 @@ bootstrap_print_remote_access_hints() {
   local bind ip caddyfile
   bind="$(bootstrap_read_api_host_bind_from_env_file)"
   ip="$(bootstrap_detect_lan_ipv4)"
-  caddyfile="$(grep -E '^OPENFDD_CADDYFILE=' "$STACK_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\r')"
+  caddyfile="$(grep -E '^OPENFDD_CADDYFILE=' "$STACK_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\r')" || true
   caddyfile="${caddyfile//\'/}"
   caddyfile="${caddyfile//\"/}"
   echo ""
@@ -1287,8 +1417,10 @@ verify() {
 
   echo ""
   echo "=== Feature checks (BACnet + API, up to 5 tries / 10s apart) ==="
+  HOST_BACNET_OK=false
   if curl_retry 5 10 -X POST http://localhost:8080/server_hello -H "Content-Type: application/json" \
       -d '{"jsonrpc":"2.0","id":"0","method":"server_hello","params":{}}'; then
+    HOST_BACNET_OK=true
     echo "BACnet: http://localhost:8080 (OK — server_hello responded)"
     hello="$(curl -sf -X POST http://localhost:8080/server_hello -H "Content-Type: application/json" \
       -d '{"jsonrpc":"2.0","id":"0","method":"server_hello","params":{}}' 2>/dev/null)" || true
@@ -1301,6 +1433,30 @@ verify() {
     fi
   else
     echo "BACnet: http://localhost:8080 (not reachable or no response after 5 tries)"
+  fi
+
+  # Same hop the dashboard uses: API container → OFDD_BACNET_SERVER_URL (host curl alone is not enough).
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx openfdd_api; then
+    if openfdd_api_gateway_check_once; then
+      :
+    else
+      if $HOST_BACNET_OK && repair_stack_env_bacnet_server_url_for_docker_hairpin; then
+        echo "=== Retrying BACnet (API→gateway) after auto-fix ==="
+        if openfdd_api_gateway_check_once; then
+          :
+        else
+          echo "BACnet (API→gateway): FAIL after auto-fix."
+          echo "  This is not a frontend rebuild issue: the UI asks the API, and the API still cannot open TCP to the DIY gateway."
+          echo "  If host.docker.internal, the bridge gateway, and your LAN IP all time out from the API container, the host is"
+          echo "  usually blocking or not routing Docker bridge → host :8080 (ufw/nftables/iptables FORWARD, rp_filter, or hairpin)."
+          echo "  See README (BACnet / Docker section). Quick checks: sudo ufw status; docker exec openfdd_api env | grep OFDD_BACNET_SERVER"
+        fi
+      else
+        echo "BACnet (API→gateway): FAIL (fix host.docker.internal / OFDD_BACNET_SERVER_URL / OFDD_BACNET_SERVER_API_KEY; see README)"
+      fi
+    fi
+  else
+    echo "BACnet (API→gateway): skip (openfdd_api not running)"
   fi
 
   if curl_retry 5 10 http://127.0.0.1:8000/health; then
@@ -1767,6 +1923,7 @@ if $VERIFY_ONLY && ! $UPDATE_PULL_REBUILD; then
   if $VERIFY_CODE; then
     verify_code || exit 1
   fi
+  run_optional_diy_bacnet_tests || exit 1
   exit 0
 fi
 
@@ -1856,7 +2013,7 @@ bootstrap_compose_force_recreate_if_needed() {
 if $FRONTEND_RESET; then
   echo "=== Frontend reset: stop frontend, remove node_modules volume ==="
   (cd "$STACK_DIR" && $dc stop frontend 2>/dev/null) || true
-  vol="$(docker volume ls -q | grep frontend_node_modules | head -1)"
+  vol="$(docker volume ls -q | grep frontend_node_modules | head -1 || true)"
   if [[ -n "$vol" ]]; then
     docker volume rm "$vol" || true
     echo "Removed volume: $vol (next up will run fresh npm install)."
@@ -2035,6 +2192,11 @@ cd "$REPO_ROOT"
 
 wait_for_postgres_or_die
 apply_migrations_best_effort
+
+if [[ "$MODE" == "full" ]]; then
+  echo ""
+  bootstrap_maybe_autofix_bacnet_api_gateway || true
+fi
 
 if [[ "$MODE" == "full" || "$MODE" == "model" ]]; then
   echo ""

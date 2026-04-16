@@ -77,7 +77,7 @@ def _app_version() -> str:
     try:
         return importlib.metadata.version("open-fdd")
     except importlib.metadata.PackageNotFoundError:
-        return getattr(settings, "app_version", "0.1.0")
+        return getattr(settings, "app_version", "2.0.14")
 
 
 app = FastAPI(
