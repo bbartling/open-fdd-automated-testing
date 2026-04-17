@@ -155,6 +155,7 @@ def run_modbus_scrape_data_model(
     gw_headers = bacnet_gateway_request_headers()
     gateway_candidates = bacnet_rpc_base_candidates(url)
     gateway_base = gateway_candidates[0] if gateway_candidates else url
+    probe_chosen: str | None = None
     for cand in gateway_candidates:
         try:
             probe = httpx.post(
@@ -171,9 +172,25 @@ def run_modbus_scrape_data_model(
             )
             if probe.is_success:
                 gateway_base = cand
+                probe_chosen = cand
                 break
-        except Exception:
-            continue
+            logger.warning(
+                "Modbus scrape: gateway server_hello probe not OK for %s (HTTP %s)",
+                cand,
+                probe.status_code,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Modbus scrape: gateway server_hello probe failed for %s: %s",
+                cand,
+                exc,
+            )
+    if probe_chosen is None and gateway_candidates:
+        logger.warning(
+            "Modbus scrape: no server_hello probe succeeded; using first candidate %s (tried: %s)",
+            gateway_base,
+            ", ".join(gateway_candidates),
+        )
 
     for gk, pairs in groups.items():
         h, p, u = gk

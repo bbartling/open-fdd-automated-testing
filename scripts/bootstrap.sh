@@ -15,7 +15,8 @@
 # Optional (single-purpose):
 #   ./scripts/bootstrap.sh --install-docker     # attempt Docker install (Linux) then run
 #   ./scripts/bootstrap.sh --minimal            # DB + bacnet-server + bacnet-scraper only (add --with-grafana for Grafana)
-#   ./scripts/bootstrap.sh --verify             # health checks only
+#   ./scripts/bootstrap.sh --verify             # health checks only (read-only; does not edit .env or recreate containers)
+#   ./scripts/bootstrap.sh --verify --autofix-bacnet   # same + optional BACnet hairpin repair when host gateway is up but API cannot reach it
 #   ./scripts/bootstrap.sh --test             # run tests: frontend (lint + typecheck + vitest), backend (pytest), Caddy validate; then exit. Does not run E2E/Selenium or long-running tests. Docker optional (skips Caddy validate if unavailable). OFDD_BOOTSTRAP_INSTALL_DEV=1 can auto-create .venv + pip install -e '.[dev]'.
 #   ./scripts/bootstrap.sh --update             # git pull this repo + diy-bacnet-server sibling, rebuild, restart (keeps DB)
 #   ./scripts/bootstrap.sh --maintenance        # safe prune only (NO volumes)
@@ -52,7 +53,8 @@
 # Notes:
 # First MQTT enable: ./scripts/bootstrap.sh --with-mqtt-bridge   (then verify / test as needed)
 # Verify + tests	./scripts/bootstrap.sh --verify --test
-# Verify only	./scripts/bootstrap.sh --verify
+# Verify only (read-only)	./scripts/bootstrap.sh --verify
+# Verify + BACnet hairpin repair if needed	./scripts/bootstrap.sh --verify --autofix-bacnet
 # Tests only	./scripts/bootstrap.sh --test
 # Update then tests (same run): ./scripts/bootstrap.sh --update --test
 #
@@ -68,6 +70,8 @@ STACK_DIR="$REPO_ROOT/stack"
 # -----------------------------
 VERIFY_ONLY=false
 VERIFY_CODE=false
+# With --verify only: if BACnet API→gateway fails, rewrite OFDD_BACNET_SERVER_URL and recreate api (default: off; verify stays read-only).
+AUTOFIX_BACNET_GATEWAY=false
 # Set by check_prereqs_for_test_mode when docker is missing or unusable (Caddy validate skipped).
 SKIP_DOCKER_FOR_TESTS=0
 MINIMAL=false
@@ -137,6 +141,7 @@ while [[ $i -lt ${#args[@]} ]]; do
   arg="${args[$i]}"
   case "$arg" in
     --verify) VERIFY_ONLY=true ;;
+    --autofix-bacnet) AUTOFIX_BACNET_GATEWAY=true ;;
     --test) VERIFY_CODE=true ;;
     --minimal) MINIMAL=true ;;
     --mode)
@@ -219,7 +224,8 @@ Core:
   --with-mqtt-bridge        Start Mosquitto + wire BACnet2MQTT env (experimental; future remote/MQTT use—not core product yet)
   --with-mcp-rag            Include MCP RAG service (http://localhost:8090; retrieval over docs/text + optional guarded API tools)
   --doctor                  Read-only diagnostics: Docker, Compose, Python, argon2-cffi, paths (no stack changes). Exit 1 if critical checks fail.
-  --verify                  Show running services + health checks (exits before starting stack)
+  --verify                  Show running services + health checks (read-only; does not modify stack/.env or recreate containers)
+  --autofix-bacnet          With --verify: if host BACnet is OK but API→gateway fails, run Linux hairpin repair (OFDD_BACNET_SERVER_URL + recreate api/bacnet-scraper)
   --verify --test           Verify services then run tests; then exit
   --test                    Run tests only: frontend (lint + typecheck + vitest), backend (pytest), Caddy validate; then exit (no E2E/Selenium). Docker is optional (Caddy validate skipped if unavailable). Env OFDD_BOOTSTRAP_INSTALL_DEV=1 auto-creates .venv and pip install -e '.[dev]' when pytest is missing.
   --update                  Git pull this AFDD stack repo + diy-bacnet-server (sibling), rebuild, restart (keeps DB)
@@ -1388,6 +1394,7 @@ verify_tls_caddy_smoke() {
 }
 
 verify() {
+  local HOST_BACNET_OK=false
   echo "=== Services ==="
   docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null | head -15
   echo ""
@@ -1417,7 +1424,6 @@ verify() {
 
   echo ""
   echo "=== Feature checks (BACnet + API, up to 5 tries / 10s apart) ==="
-  HOST_BACNET_OK=false
   if curl_retry 5 10 -X POST http://localhost:8080/server_hello -H "Content-Type: application/json" \
       -d '{"jsonrpc":"2.0","id":"0","method":"server_hello","params":{}}'; then
     HOST_BACNET_OK=true
@@ -1440,8 +1446,8 @@ verify() {
     if openfdd_api_gateway_check_once; then
       :
     else
-      if $HOST_BACNET_OK && repair_stack_env_bacnet_server_url_for_docker_hairpin; then
-        echo "=== Retrying BACnet (API→gateway) after auto-fix ==="
+      if $AUTOFIX_BACNET_GATEWAY && $HOST_BACNET_OK && repair_stack_env_bacnet_server_url_for_docker_hairpin; then
+        echo "=== Retrying BACnet (API→gateway) after --autofix-bacnet repair ==="
         if openfdd_api_gateway_check_once; then
           :
         else
@@ -1452,7 +1458,10 @@ verify() {
           echo "  See README (BACnet / Docker section). Quick checks: sudo ufw status; docker exec openfdd_api env | grep OFDD_BACNET_SERVER"
         fi
       else
-        echo "BACnet (API→gateway): FAIL (fix host.docker.internal / OFDD_BACNET_SERVER_URL / OFDD_BACNET_SERVER_API_KEY; see README)"
+        echo "BACnet (API→gateway): FAIL (set OFDD_BACNET_SERVER_URL in stack/.env, firewall/routing, or OFDD_BACNET_SERVER_API_KEY; see README)"
+        if ! $AUTOFIX_BACNET_GATEWAY && $HOST_BACNET_OK; then
+          echo "  Optional: ./scripts/bootstrap.sh --verify --autofix-bacnet  (rewrites hairpin URL + recreates api/bacnet-scraper), or run a full bootstrap."
+        fi
       fi
     fi
   else

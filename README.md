@@ -16,7 +16,7 @@
 
 Open-FDD is an open-source knowledge graph fault-detection platform for HVAC systems that helps facilities optimize their energy usage and cost-savings. Because it runs on-prem, facilities never have to worry about a vendor hiking prices, going dark, or walking away with their data. The platform is an AFDD stack designed to run inside the building, behind the firewall, under the owner’s control. It transforms operational data into actionable, cost-saving insights and provides a secure integration layer that any cloud platform can use without vendor lock-in. U.S. Department of Energy research reports median energy savings of roughly 8–9% from FDD programs—meaningful annual savings depending on facility size and energy spend.
 
-The content that used to live here is now **`afdd_stack/`** in **[bbartling/open-fdd](https://github.com/bbartling/open-fdd)**. The README below is **legacy**; prefer the monorepo. The **rules engine** is still **[`open-fdd` on PyPI](https://pypi.org/project/open-fdd/)**.
+Older material also ships as **`afdd_stack/`** in **[bbartling/open-fdd](https://github.com/bbartling/open-fdd)**. **This repository** is the canonical Docker + React stack, bootstrap, and stack docs (see links below). The **rules engine** library remains **[`open-fdd` on PyPI](https://pypi.org/project/open-fdd/)**.
 
 
 ---

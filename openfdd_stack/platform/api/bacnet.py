@@ -404,13 +404,16 @@ def _post_rpc_once(
 
 def _post_rpc(base_url: str, method: str, params: dict, timeout: float = 10.0) -> dict:
     """POST JSON-RPC to diy-bacnet-server; try Docker host fallbacks when host.docker.internal fails."""
-    last: dict = {"ok": False, "error": "no gateway URL candidates"}
+    configured = base_url.strip().rstrip("/")
+    last: dict = {"ok": False, "error": "no gateway URL candidates", "gateway_url": configured}
     for base in bacnet_rpc_base_candidates(base_url):
         out = _post_rpc_once(base, method, params, timeout)
         if out.get("ok"):
             return out
         last = out
-    return last
+    if isinstance(last, dict):
+        return {**last, "gateway_url": configured}
+    return {"ok": False, "error": str(last), "gateway_url": configured}
 
 
 @router.post("/server_hello", summary="BACnet server hello")
@@ -426,10 +429,12 @@ def bacnet_server_hello(
     If server_hello is not implemented (e.g. 404), fall back to a minimal Who-Is; if that succeeds,
     return ok so the status strip shows green when the gateway is reachable.
     """
+    resolved: str | None = None
     try:
         url = _bacnet_url(body or {})
+        resolved = url
         if not url.startswith("http"):
-            return {"ok": False, "error": "Invalid URL"}
+            return {"ok": False, "error": "Invalid URL", "gateway_url": url}
         url = _require_allowlisted_gateway_url(url)
         result = _post_rpc(url, "server_hello", {}, timeout=5.0)
         if result.get("ok") and "body" in result:
@@ -447,7 +452,7 @@ def bacnet_server_hello(
                 "status_code": whois.get("status_code"),
                 "body": {"result": {"message": "Gateway reachable (whois)"}},
             }
-        # Help operators distinguish browser→API URL from API→gateway (OFDD_BACNET_SERVER_URL / graph).
+        # _post_rpc already attaches gateway_url on failure; keep allowlisted url in sync.
         if isinstance(result, dict):
             return {**result, "gateway_url": url}
         return {"ok": False, "error": str(result), "gateway_url": url}
@@ -455,7 +460,11 @@ def bacnet_server_hello(
         raise
     except Exception as e:
         logger.exception("bacnet server_hello failed")
-        return {"ok": False, "error": str(e)}
+        return {
+            "ok": False,
+            "error": str(e),
+            "gateway_url": resolved or "",
+        }
 
 
 @router.post("/whois_range", summary="BACnet Who-Is range")

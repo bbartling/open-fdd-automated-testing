@@ -52,7 +52,7 @@ function spaBypass(req: IncomingMessage) {
 
 /** Docker / lab: VITE_API_BASE=/api → fetch /api/bacnet/… ; backend serves /bacnet/… (strip /api). */
 function stripApiPrefix(path: string): string {
-  const stripped = path.replace(/^\/api/, "");
+  const stripped = path.replace(/^\/api(?=\/|$)/, "");
   return stripped.length ? stripped : "/";
 }
 

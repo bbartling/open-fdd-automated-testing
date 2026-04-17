@@ -36,6 +36,7 @@ export function useBacnetStatus() {
               statusCode: data.status_code ?? null,
               note:
                 "openfddApiUrl is your browser→OpenFDD request. gatewayUrlTheApiUses is where the API container sends JSON-RPC (OFDD_BACNET_SERVER_URL overrides ofdd:bacnetServerUrl in Docker).",
+              checkInNetworkTab: "GET /bacnet/gateways lists default gateway URLs the API will use.",
             },
           );
         } else {
