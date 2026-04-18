@@ -22,6 +22,12 @@ from openfdd_stack.platform.selene.graph_config import (
     SeleneConfigStore,
     make_selene_client_from_settings,
 )
+from openfdd_stack.platform.selene.graph_crud import (
+    EXTERNAL_ID_PROP,
+    SITE_LABEL,
+    delete_site,
+    upsert_site,
+)
 
 __all__ = [
     "SeleneClient",
@@ -34,4 +40,8 @@ __all__ = [
     "SeleneConfigStore",
     "SELENE_CONFIG_LABEL",
     "make_selene_client_from_settings",
+    "SITE_LABEL",
+    "EXTERNAL_ID_PROP",
+    "upsert_site",
+    "delete_site",
 ]
