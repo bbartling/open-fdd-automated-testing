@@ -485,18 +485,44 @@ def _object_from_oid_entry(entry: Any, *, device_instance: int) -> DiscoveredObj
     )
 
 
+# Cached ``{repr: ObjectType}`` so ``enrich_objects`` doesn't re-scan
+# ``dir(ObjectType)`` once per object on large device scans. Populated lazily
+# after rusty-bacnet is confirmed importable so module import stays side-effect
+# free.
+_OBJECT_TYPE_BY_REPR: dict[str, Any] | None = None
+
+
+def _rusty_object_type_map() -> dict[str, Any]:
+    """Return the cached ``{repr(ObjectType): ObjectType}`` table, building
+    it on first call."""
+    global _OBJECT_TYPE_BY_REPR
+    if _OBJECT_TYPE_BY_REPR is not None:
+        return _OBJECT_TYPE_BY_REPR
+    rb = _require_rusty_bacnet()
+    mapping: dict[str, Any] = {}
+    for attr in dir(rb.ObjectType):
+        if attr.startswith("_"):
+            continue
+        candidate = getattr(rb.ObjectType, attr, None)
+        if candidate is None:
+            continue
+        try:
+            mapping[repr(candidate)] = candidate
+        except Exception:  # noqa: BLE001 — skip attrs that aren't ObjectType instances
+            continue
+    _OBJECT_TYPE_BY_REPR = mapping
+    return mapping
+
+
 def _rusty_object_type(repr_str: str) -> Any:
     """Look up a ``rusty_bacnet.ObjectType`` by its ``__repr__`` string.
 
     Used by :meth:`BipTransport.enrich_objects` — we store the repr
     (``"AnalogInput"``) on :class:`DiscoveredObject`, and need to reconstruct
-    the enum value to build the RPM request.
+    the enum value to build the RPM request. O(1) lookup via the cached
+    table built by :func:`_rusty_object_type_map`.
     """
-    rb = _require_rusty_bacnet()
-    for attr in dir(rb.ObjectType):
-        if attr.startswith("_"):
-            continue
-        candidate = getattr(rb.ObjectType, attr, None)
-        if candidate is not None and repr(candidate) == repr_str:
-            return candidate
-    raise ValueError(f"unknown BACnet ObjectType repr: {repr_str!r}")
+    try:
+        return _rusty_object_type_map()[repr_str]
+    except KeyError:
+        raise ValueError(f"unknown BACnet ObjectType repr: {repr_str!r}") from None

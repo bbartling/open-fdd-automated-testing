@@ -87,8 +87,10 @@ class BacnetDriver:
         When ``enrich`` is true (default) each device gets a follow-up
         ``ReadPropertyMultiple`` to populate name/vendor/model/firmware
         before the graph write. Callers doing a fast scan (UI "quick
-        scan") can pass ``enrich=False`` and call
-        :meth:`enrich_device` selectively later.
+        scan") can pass ``enrich=False`` and re-run
+        :meth:`discover_devices` with ``enrich=True`` later to fill in
+        the metadata (re-runs are idempotent — same devices upsert in
+        place keyed on instance number).
         """
         devices = await self._transport.discover_devices(
             timeout_ms=timeout_ms, low_limit=low_limit, high_limit=high_limit

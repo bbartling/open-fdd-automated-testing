@@ -122,6 +122,16 @@ def test_upsert_bacnet_device_creates_node_and_links_network():
                     "properties": captured["node_body"]["properties"],
                 },
             )
+        if (
+            request.method == "GET"
+            and request.url.path.startswith("/nodes/")
+            and request.url.path.endswith("/edges")
+        ):
+            # Pre-check used by ``_ensure_edge`` — no pre-existing edges.
+            return httpx.Response(
+                200,
+                json={"node_id": 100, "edges": [], "total": 0},
+            )
         if request.method == "POST" and request.url.path == "/edges":
             captured["edge_body"] = _json.loads(request.content)
             return httpx.Response(
@@ -260,6 +270,15 @@ def test_upsert_bacnet_object_creates_node_and_links_device():
                     "properties": captured["node_body"]["properties"],
                 },
             )
+        if (
+            request.method == "GET"
+            and request.url.path.startswith("/nodes/")
+            and request.url.path.endswith("/edges")
+        ):
+            return httpx.Response(
+                200,
+                json={"node_id": 42, "edges": [], "total": 0},
+            )
         if request.method == "POST" and request.url.path == "/edges":
             captured["edge_body"] = _json.loads(request.content)
             return httpx.Response(
@@ -330,6 +349,77 @@ def test_upsert_bacnet_object_uses_placeholder_object_name_without_enrichment():
 # ---------------------------------------------------------------------------
 # Graceful error path
 # ---------------------------------------------------------------------------
+
+
+def test_upsert_bacnet_device_skips_edge_when_already_present():
+    """Re-running device upsert must not append duplicate hasDevice edges.
+
+    Emulates a Selene that already has the device node *and* the
+    ``hasDevice`` edge from a prior discovery pass. The writer calls
+    ``get_node_edges`` (pre-check), sees the edge, and skips the
+    ``POST /edges``.
+    """
+    calls: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        calls.append((request.method, request.url.path))
+        if request.method == "GET" and request.url.path == "/nodes":
+            return httpx.Response(
+                200,
+                json={
+                    "nodes": [
+                        {
+                            "id": 11,
+                            "labels": [BACNET_DEVICE_LABEL],
+                            "properties": {
+                                "external_id": "bacnet:device:5",
+                                "name": "Prev",
+                                "instance": 5,
+                                "address": "10.0.0.5:47808",
+                            },
+                        }
+                    ],
+                    "total": 1,
+                },
+            )
+        if request.method == "PUT" and request.url.path == "/nodes/11":
+            body = _json.loads(request.content)
+            return httpx.Response(
+                200,
+                json={
+                    "id": 11,
+                    "labels": [BACNET_DEVICE_LABEL],
+                    "properties": body["set_properties"],
+                },
+            )
+        if request.method == "GET" and request.url.path == "/nodes/100/edges":
+            return httpx.Response(
+                200,
+                json={
+                    "node_id": 100,
+                    "edges": [
+                        {
+                            "id": 99,
+                            "source": 100,
+                            "target": 11,
+                            "label": HAS_DEVICE_EDGE,
+                        }
+                    ],
+                    "total": 1,
+                },
+            )
+        raise AssertionError(f"unexpected {request.method} {request.url.path}")
+
+    device = DiscoveredDevice(
+        device_instance=5, address="10.0.0.5:47808", device_name="Prev"
+    )
+    with _mock_selene(handler) as client:
+        upsert_bacnet_device(client, device, network_node_id=100)
+
+    # No POST /edges issued — the pre-check found the edge and skipped.
+    assert ("POST", "/edges") not in calls
 
 
 def test_upsert_bacnet_device_returns_none_on_selene_error(caplog):

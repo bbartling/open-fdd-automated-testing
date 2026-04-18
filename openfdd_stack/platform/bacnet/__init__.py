@@ -26,6 +26,7 @@ nodes per ``config/schema_packs/bacnet-driver.json``. No Postgres rows
 for discovered state — Phase 2 is graph-first.
 """
 
+from openfdd_stack.platform.bacnet.bip import BipTransport
 from openfdd_stack.platform.bacnet.driver import BacnetDriver
 from openfdd_stack.platform.bacnet.errors import (
     BacnetAbortedError,
@@ -52,6 +53,7 @@ __all__ = [
     "BacnetDriver",
     # Transport layer
     "Transport",
+    "BipTransport",
     "DiscoveredDevice",
     "DiscoveredObject",
     # Errors

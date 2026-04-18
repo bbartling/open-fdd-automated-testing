@@ -146,14 +146,25 @@ def _ensure_edge(
     label: str,
     op_name: str,
 ) -> None:
-    """Idempotent edge upsert using Selene's ``upsert`` semantics.
+    """Idempotent edge creation via client-side check + create.
 
-    The server-side ``upsert=true`` flag returns the existing edge when
-    one already exists with the same ``(source, target, label)`` — so
-    repeat discoveries don't accumulate duplicate edges. Failures are
-    best-effort: logged, not raised.
+    ``SeleneClient.create_edge`` is a straight POST — it does **not**
+    dedupe, so repeat discoveries would otherwise accumulate duplicate
+    ``hasDevice`` / ``exposesObject`` edges. Match the existing
+    pattern in :mod:`openfdd_stack.platform.selene.graph_crud`
+    (``_reconcile_single_edge``): list the source node's edges, skip
+    the create when one already matches ``(target, label)``. Failures
+    are best-effort — logged, not raised.
     """
     try:
+        existing = client.get_node_edges(source_id) or {}
+        for edge in existing.get("edges", []) or []:
+            if (
+                edge.get("source") == source_id
+                and edge.get("target") == target_id
+                and edge.get("label") == label
+            ):
+                return
         client.create_edge(source_id, target_id, label)
     except SeleneError:
         logger.warning(

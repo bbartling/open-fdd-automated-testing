@@ -175,6 +175,20 @@ class _SeleneState:
             self.edges.append(edge)
             return httpx.Response(201, json=edge)
 
+        if method == "GET" and path.startswith("/nodes/") and path.endswith("/edges"):
+            # ``_ensure_edge`` pre-check — return whichever edges the
+            # emulated Selene already has anchored on this node.
+            node_id = int(path.split("/")[2])
+            relevant = [
+                e
+                for e in self.edges
+                if e["source"] == node_id or e["target"] == node_id
+            ]
+            return httpx.Response(
+                200,
+                json={"node_id": node_id, "edges": relevant, "total": len(relevant)},
+            )
+
         raise AssertionError(f"unexpected {method} {path}")
 
 
@@ -357,6 +371,59 @@ def test_discover_end_to_end_returns_objects_per_device():
     assert "bacnet_network" in labels
     assert "bacnet_device" in labels
     assert "bacnet_object" in labels
+
+
+def test_discover_devices_twice_does_not_duplicate_edges():
+    """Re-running discovery must be idempotent — no duplicate hasDevice edges.
+
+    Regression guard for the ``_ensure_edge`` pre-check. Without it,
+    every discovery run would append another ``hasDevice`` edge for the
+    same device and the graph would grow unboundedly on repeated scans.
+    """
+    state = _SeleneState()
+    tx = FakeTransport(
+        devices=[DiscoveredDevice(device_instance=42, address="10.0.0.42:47808")],
+    )
+    driver = BacnetDriver(tx, _selene_factory(state))
+
+    asyncio.run(driver.discover_devices())
+    asyncio.run(driver.discover_devices())
+    asyncio.run(driver.discover_devices())
+
+    has_device_edges = [e for e in state.edges if e["label"] == "hasDevice"]
+    assert (
+        len(has_device_edges) == 1
+    ), f"expected exactly 1 hasDevice edge, got {len(has_device_edges)}"
+
+
+def test_discover_device_objects_twice_does_not_duplicate_edges():
+    """Same guard for ``exposesObject`` when re-scanning a device."""
+    state = _SeleneState()
+    device = DiscoveredDevice(
+        device_instance=7,
+        address="10.0.0.7:47808",
+        device_name="Repeat-Device",
+    )
+    tx = FakeTransport(
+        devices=[device],
+        objects_by_device={
+            7: [
+                DiscoveredObject(
+                    device_instance=7,
+                    object_type="AnalogInput",
+                    object_instance=1,
+                    concept_curie="mnemo:BacnetAnalogInput",
+                )
+            ]
+        },
+    )
+    driver = BacnetDriver(tx, _selene_factory(state))
+
+    asyncio.run(driver.discover_device_objects(device))
+    asyncio.run(driver.discover_device_objects(device))
+
+    exposes_edges = [e for e in state.edges if e["label"] == "exposesObject"]
+    assert len(exposes_edges) == 1
 
 
 @pytest.mark.parametrize("name", ["default", "site-a", "branch-office"])
