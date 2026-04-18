@@ -19,6 +19,8 @@ from openfdd_stack.platform.bacnet.graph import (
     BACNET_OBJECT_LABEL,
     EXPOSES_OBJECT_EDGE,
     HAS_DEVICE_EDGE,
+    PROTOCOL_BINDING_EDGE,
+    bind_object_to_point,
     device_external_id,
     ensure_bacnet_network,
     network_external_id,
@@ -434,3 +436,77 @@ def test_upsert_bacnet_device_returns_none_on_selene_error(caplog):
             result = upsert_bacnet_device(client, device)
     assert result is None
     assert any("upsert_bacnet_device" in rec.message for rec in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# bind_object_to_point
+# ---------------------------------------------------------------------------
+
+
+def test_bind_object_to_point_creates_edge_with_property():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        if (
+            request.method == "GET"
+            and request.url.path.startswith("/nodes/")
+            and request.url.path.endswith("/edges")
+        ):
+            return httpx.Response(200, json={"node_id": 200, "edges": [], "total": 0})
+        if request.method == "POST" and request.url.path == "/edges":
+            captured["body"] = _json.loads(request.content)
+            return httpx.Response(
+                201,
+                json={
+                    "id": 77,
+                    "source": captured["body"]["source"],
+                    "target": captured["body"]["target"],
+                    "label": captured["body"]["label"],
+                },
+            )
+        raise AssertionError(f"unexpected {request.method} {request.url.path}")
+
+    with _mock_selene(handler) as client:
+        bind_object_to_point(client, bacnet_object_node_id=200, point_node_id=500)
+
+    assert captured["body"]["source"] == 200
+    assert captured["body"]["target"] == 500
+    assert captured["body"]["label"] == PROTOCOL_BINDING_EDGE
+    assert captured["body"]["properties"]["property"] == "present_value"
+
+
+def test_bind_object_to_point_is_idempotent_when_edge_exists():
+    """Re-binding must not create a second protocolBinding edge."""
+    calls: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path))
+        if (
+            request.method == "GET"
+            and request.url.path.startswith("/nodes/")
+            and request.url.path.endswith("/edges")
+        ):
+            return httpx.Response(
+                200,
+                json={
+                    "node_id": 200,
+                    "edges": [
+                        {
+                            "id": 77,
+                            "source": 200,
+                            "target": 500,
+                            "label": PROTOCOL_BINDING_EDGE,
+                        }
+                    ],
+                    "total": 1,
+                },
+            )
+        raise AssertionError(f"unexpected {request.method} {request.url.path}")
+
+    with _mock_selene(handler) as client:
+        bind_object_to_point(client, bacnet_object_node_id=200, point_node_id=500)
+
+    # No POST /edges issued — the pre-check matched.
+    assert ("POST", "/edges") not in calls

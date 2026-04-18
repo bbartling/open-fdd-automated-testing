@@ -54,6 +54,43 @@ class DiscoveredDevice:
 
 
 @dataclass(frozen=True)
+class PropertyRead:
+    """One ``(object, property)`` read request for the scrape batch.
+
+    The scraper builds one per ``:protocolBinding`` edge in Selene and
+    hands the list to :meth:`Transport.read_present_values`. The
+    ``property`` field is a BACnet property name string
+    (``"present_value"`` by default); transports translate to the
+    underlying integer identifier.
+    """
+
+    object_type: str
+    object_instance: int
+    property: str = "present_value"
+
+
+@dataclass(frozen=True)
+class PropertyReadResult:
+    """Outcome of one :class:`PropertyRead` in a batch scrape.
+
+    Either ``value`` is set and ``error`` is ``None`` (success), or
+    ``error`` carries a short string describing what failed on this
+    specific entry — the batch as a whole didn't fail, just this one.
+    That shape matches rusty-bacnet's per-object RPM result, and lets
+    the scrape loop persist what worked while logging what didn't.
+    """
+
+    object_type: str
+    object_instance: int
+    property: str
+    # ``bytes`` is included because octet-string / bit-string properties
+    # decode to raw bytes via rusty-bacnet; the scraper currently drops
+    # them but the transport contract still has to surface them honestly.
+    value: float | int | bool | str | bytes | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True)
 class DiscoveredObject:
     """One object enumerated from a device's ``object-list`` property.
 
@@ -152,4 +189,19 @@ class Transport(ABC):
         list (entries are frozen). Errors on individual objects are
         swallowed — the caller gets whatever came back; partial results
         are expected on mixed-capability devices.
+        """
+
+    @abstractmethod
+    async def read_present_values(
+        self,
+        device: DiscoveredDevice,
+        reads: list[PropertyRead],
+    ) -> list[PropertyReadResult]:
+        """Batch-read one property per object (scrape hot path).
+
+        Issued as a single ``ReadPropertyMultiple`` so one device round
+        trip covers its whole point set. Returns one
+        :class:`PropertyReadResult` per input entry, preserving order —
+        callers zip results back to their point bindings and know which
+        samples to drop (``error is not None``) and which to write.
         """

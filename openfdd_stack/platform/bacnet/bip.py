@@ -40,6 +40,8 @@ from openfdd_stack.platform.bacnet.object_types import curie_for_object_type
 from openfdd_stack.platform.bacnet.transport import (
     DiscoveredDevice,
     DiscoveredObject,
+    PropertyRead,
+    PropertyReadResult,
     Transport,
 )
 
@@ -47,11 +49,22 @@ from openfdd_stack.platform.bacnet.transport import (
 # rusty-bacnet's enum module-state at import time.
 _PROP_OBJECT_LIST = 76
 _PROP_OBJECT_NAME = 77
+_PROP_PRESENT_VALUE = 85
 _PROP_DESCRIPTION = 28
 _PROP_UNITS = 117
 _PROP_VENDOR_NAME = 121
 _PROP_MODEL_NAME = 70
 _PROP_FIRMWARE_REVISION = 44
+
+# Maps the scrape API's string property names to the raw BACnet
+# property IDs rusty-bacnet expects. Extend as we support more
+# properties (priority-array, status-flags, …) in future slices.
+_PROPERTY_NAME_TO_ID: dict[str, int] = {
+    "present_value": _PROP_PRESENT_VALUE,
+    "object_name": _PROP_OBJECT_NAME,
+    "description": _PROP_DESCRIPTION,
+    "units": _PROP_UNITS,
+}
 
 # Object-type 8 = Device. The Device object lives at instance == the
 # device's own instance number.
@@ -329,6 +342,108 @@ class BipTransport(Transport):
             )
         return enriched
 
+    async def read_present_values(
+        self,
+        device: DiscoveredDevice,
+        reads: list[PropertyRead],
+    ) -> list[PropertyReadResult]:
+        """Batch-read one property per object as a single RPM.
+
+        Unknown property names (not in ``_PROPERTY_NAME_TO_ID``) and
+        unknown object-type reprs (not in rusty-bacnet's ObjectType
+        enum) are each recorded as specific error entries in the
+        result list rather than failing the whole batch — scrape
+        loops should keep moving even if one binding is malformed.
+        Operators get the exact reason (``unsupported property name``
+        vs. ``unknown object type``) so misconfiguration is easy to
+        diagnose.
+        """
+        if not reads:
+            return []
+        rb = _require_rusty_bacnet()
+        client = self._ensure_client()
+
+        # Build specs and remember per-read which ones we couldn't encode
+        # so we can emit specific error results later. ``encode_errors``
+        # is keyed by the original read index so we preserve order.
+        specs: list[Any] = []
+        encode_errors: dict[int, str] = {}
+        for idx, read in enumerate(reads):
+            prop_id = _PROPERTY_NAME_TO_ID.get(read.property)
+            if prop_id is None:
+                encode_errors[idx] = f"unsupported property name: {read.property!r}"
+                continue
+            try:
+                rusty_type = _rusty_object_type(read.object_type)
+            except ValueError:
+                encode_errors[idx] = f"unknown object type: {read.object_type!r}"
+                continue
+            oid = rb.ObjectIdentifier(rusty_type, read.object_instance)
+            specs.append(
+                (
+                    oid,
+                    [(rb.PropertyIdentifier.from_raw(prop_id), None)],
+                )
+            )
+
+        rpm_result: Any = []
+        if specs:
+            try:
+                rpm_result = await client.read_property_multiple(device.address, specs)
+            except (
+                Exception
+            ) as exc:  # noqa: BLE001 — per-device failure is fatal for the batch
+                raise _translate_rusty_error(exc) from exc
+
+        values = _extract_property_values_by_object(rpm_result)
+
+        # Build results in the same order as ``reads``, filling specific
+        # errors for entries we couldn't translate to RPM specs.
+        results: list[PropertyReadResult] = []
+        for idx, read in enumerate(reads):
+            if idx in encode_errors:
+                results.append(
+                    PropertyReadResult(
+                        object_type=read.object_type,
+                        object_instance=read.object_instance,
+                        property=read.property,
+                        error=encode_errors[idx],
+                    )
+                )
+                continue
+            prop_id = _PROPERTY_NAME_TO_ID[read.property]  # already validated above
+            key = (read.object_type, read.object_instance)
+            value_or_error = (values.get(key) or {}).get(prop_id)
+            if isinstance(value_or_error, dict) and "error" in value_or_error:
+                results.append(
+                    PropertyReadResult(
+                        object_type=read.object_type,
+                        object_instance=read.object_instance,
+                        property=read.property,
+                        error=str(value_or_error["error"]),
+                    )
+                )
+                continue
+            if value_or_error is None:
+                results.append(
+                    PropertyReadResult(
+                        object_type=read.object_type,
+                        object_instance=read.object_instance,
+                        property=read.property,
+                        error="no value returned",
+                    )
+                )
+                continue
+            results.append(
+                PropertyReadResult(
+                    object_type=read.object_type,
+                    object_instance=read.object_instance,
+                    property=read.property,
+                    value=value_or_error,
+                )
+            )
+        return results
+
 
 # ---------------------------------------------------------------------------
 # Translation helpers — all operate on rusty-bacnet values, kept module-local
@@ -423,6 +538,54 @@ def _flatten_rpm(rpm_result: Any) -> list[dict[str, Any]]:
         if isinstance(results, list):
             return [r for r in results if isinstance(r, dict)]
     return []
+
+
+def _extract_property_values_by_object(
+    rpm_result: Any,
+) -> dict[tuple[str, int], dict[int, Any]]:
+    """Group an RPM result into ``{(object_type, instance): {prop_id: value|{"error": ...}}}``.
+
+    Success entries store the decoded Python value directly; per-entry
+    errors store ``{"error": "<msg>"}`` so the scraper's result builder
+    can preserve the distinction without a second library call.
+    """
+    out: dict[tuple[str, int], dict[int, Any]] = {}
+    if not isinstance(rpm_result, list):
+        return out
+    for obj_result in rpm_result:
+        if not isinstance(obj_result, dict):
+            continue
+        oid = obj_result.get("object_id") or obj_result.get("object_identifier")
+        if oid is None:
+            continue
+        try:
+            otype = repr(oid.object_type)
+            inst = int(oid.instance)
+        except AttributeError:
+            continue
+        bucket: dict[int, Any] = out.setdefault((otype, inst), {})
+        for r in obj_result.get("results") or []:
+            if not isinstance(r, dict):
+                continue
+            pid = r.get("property_id")
+            if not isinstance(pid, int):
+                pid_obj = r.get("property")
+                pid = int(pid_obj.to_raw()) if pid_obj is not None else None
+            if pid is None:
+                continue
+            error = r.get("error")
+            if error is not None:
+                bucket[pid] = {"error": error}
+                continue
+            value = r.get("value")
+            if value is None:
+                bucket[pid] = {"error": "no value returned"}
+                continue
+            try:
+                bucket[pid] = _property_value_to_python(value)
+            except BacnetDecodeError as exc:
+                bucket[pid] = {"error": str(exc)}
+    return out
 
 
 def _results_by_object_identifier(

@@ -19,6 +19,8 @@ from openfdd_stack.platform.bacnet import (
     BacnetDriver,
     DiscoveredDevice,
     DiscoveredObject,
+    PropertyRead,
+    PropertyReadResult,
     Transport,
 )
 from openfdd_stack.platform.selene import SeleneClient
@@ -108,6 +110,24 @@ class FakeTransport(Transport):
                 units=o.units,
             )
             for o in objects
+        ]
+
+    async def read_present_values(
+        self, device: DiscoveredDevice, reads: list[PropertyRead]
+    ) -> list[PropertyReadResult]:
+        # Default FakeTransport is only used by discover-path tests; the
+        # scraper has its own per-test transport. Returning empty results
+        # is enough to satisfy the ABC when discover tests never call
+        # into this method.
+        self.calls.append(("read_present_values", device.device_instance))
+        return [
+            PropertyReadResult(
+                object_type=r.object_type,
+                object_instance=r.object_instance,
+                property=r.property,
+                error="FakeTransport default: read_present_values not stubbed",
+            )
+            for r in reads
         ]
 
 

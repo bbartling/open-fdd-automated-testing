@@ -42,20 +42,37 @@ from openfdd_stack.platform.bacnet.object_types import (
     OBJECT_TYPE_TO_CURIE,
     curie_for_object_type,
 )
+from openfdd_stack.platform.bacnet.scrape import (
+    BacnetScraper,
+    ScrapeBinding,
+    ScrapePlan,
+    ScrapeResult,
+    load_scrape_plan,
+)
 from openfdd_stack.platform.bacnet.transport import (
     DiscoveredDevice,
     DiscoveredObject,
+    PropertyRead,
+    PropertyReadResult,
     Transport,
 )
 
 __all__ = [
     # Orchestrator
     "BacnetDriver",
+    # Scrape surface
+    "BacnetScraper",
+    "ScrapeBinding",
+    "ScrapePlan",
+    "ScrapeResult",
+    "load_scrape_plan",
     # Transport layer
     "Transport",
     "BipTransport",
     "DiscoveredDevice",
     "DiscoveredObject",
+    "PropertyRead",
+    "PropertyReadResult",
     # Errors
     "BacnetError",
     "BacnetDriverError",

@@ -39,9 +39,11 @@ logger = logging.getLogger(__name__)
 BACNET_NETWORK_LABEL = "bacnet_network"
 BACNET_DEVICE_LABEL = "bacnet_device"
 BACNET_OBJECT_LABEL = "bacnet_object"
+POINT_LABEL = "point"
 
 HAS_DEVICE_EDGE = "hasDevice"
 EXPOSES_OBJECT_EDGE = "exposesObject"
+PROTOCOL_BINDING_EDGE = "protocolBinding"
 
 EXTERNAL_ID_PROP = "external_id"
 
@@ -314,3 +316,51 @@ def upsert_bacnet_object(
             op_name="bacnet upsert_bacnet_object",
         )
     return node
+
+
+def bind_object_to_point(
+    client: SeleneClient,
+    *,
+    bacnet_object_node_id: int,
+    point_node_id: int,
+    bacnet_property: str = "present_value",
+) -> None:
+    """Create (or reuse) a ``protocolBinding`` edge from object to point.
+
+    The ``protocolBinding`` relationship is the link that the scraper
+    walks to learn "this BACnet object's present-value becomes this
+    point's timeseries."
+
+    **Idempotency contract**: at most one ``protocolBinding`` edge per
+    ``(bacnet_object, point)`` pair. A subsequent call with a different
+    ``bacnet_property`` is a no-op — the original edge's ``property``
+    is not updated (Selene edges don't support property updates via
+    this client today). Rebinding to a different BACnet property means
+    deleting the existing edge first, which isn't a supported UX yet.
+    """
+    try:
+        existing = client.get_node_edges(bacnet_object_node_id) or {}
+        for edge in existing.get("edges") or []:
+            if (
+                edge.get("source") == bacnet_object_node_id
+                and edge.get("target") == point_node_id
+                and edge.get("label") == PROTOCOL_BINDING_EDGE
+            ):
+                # Already bound — no need to create another edge with the
+                # same property (or to re-upsert; Selene edges don't
+                # currently support property updates via this client).
+                return
+        client.create_edge(
+            bacnet_object_node_id,
+            point_node_id,
+            PROTOCOL_BINDING_EDGE,
+            properties={"property": bacnet_property},
+        )
+    except SeleneError:
+        logger.warning(
+            "bacnet bind_object_to_point failed for object=%d point=%d property=%s",
+            bacnet_object_node_id,
+            point_node_id,
+            bacnet_property,
+            exc_info=True,
+        )
