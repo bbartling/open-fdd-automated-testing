@@ -5,7 +5,9 @@ WORKDIR /app
 
 COPY pyproject.toml README.md MANIFEST.in ./
 COPY openfdd_stack ./openfdd_stack
+# ``.[bacnet]`` pulls in rusty-bacnet from PyPI — embedded driver
+# replaces the diy-bacnet-server JSON-RPC container as of Phase 2.5d.
 RUN pip install --no-cache-dir "open-fdd>=2.3.1" \
- && pip install --no-cache-dir .
+ && pip install --no-cache-dir ".[bacnet]"
 
 CMD ["python", "-u", "-m", "openfdd_stack.platform.drivers.run_bacnet_scrape", "--loop"]

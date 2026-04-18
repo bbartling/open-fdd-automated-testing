@@ -883,99 +883,22 @@ normalize_bacnet_server_url_when_mistaken_for_bind() {
   return 0
 }
 
-# Linux: API on the bridge cannot hairpin to host.docker.internal:8080 when bacnet-server uses network_mode:host.
-# If stack/.env still points at host.docker.internal (or omits the key so compose uses the default), rewrite to
-# http://<LAN-IPv4>:8080 and recreate api + bacnet-scraper. Returns 0 when a change was applied (caller should retry).
+# The Linux Docker-hairpin repair was tied to the diy-bacnet-server HTTP gateway
+# on port 8080. Phase 2.5d retired that path — rusty-bacnet is embedded in the
+# scraper container and binds UDP/47808 directly via ``network_mode: host``.
+# These functions stay as no-ops so legacy CLI flags (``--autofix-bacnet``) do
+# not surface Python ImportErrors from references to deleted modules. Remove
+# the ``--autofix-bacnet`` flag and callers in a follow-up bootstrap cleanup.
 repair_stack_env_bacnet_server_url_for_docker_hairpin() {
-  local ef="$STACK_DIR/.env" cur_line cur_val repair_ip inferred_url
-  [[ -f "$ef" ]] || touch "$ef"
-  cur_line=$(grep -E '^OFDD_BACNET_SERVER_URL=' "$ef" 2>/dev/null | tail -1 || true)
-  cur_val=""
-  [[ -n "$cur_line" ]] && cur_val="${cur_line#OFDD_BACNET_SERVER_URL=}"
-  cur_val="${cur_val//$'\r'/}"
-  if [[ -n "$cur_line" ]] && [[ "$cur_val" != *"host.docker.internal"* ]]; then
-    return 1
-  fi
-  repair_ip=""
-  if repair_ip="$(stack_env_bacnet_bind_ipv4 "$ef" 2>/dev/null)"; then
-    :
-  elif repair_ip="$(infer_ipv4_default_route_src_linux 2>/dev/null)"; then
-    :
-  else
-    return 1
-  fi
-  [[ -n "$repair_ip" ]] || return 1
-  inferred_url="http://${repair_ip}:8080"
-  if [[ "$cur_val" == "$inferred_url" ]]; then
-    return 1
-  fi
-  env_file_set_kv "$ef" "OFDD_BACNET_SERVER_URL" "$inferred_url"
-  echo "Auto-fix (BACnet API→gateway): wrote OFDD_BACNET_SERVER_URL=${inferred_url} in stack/.env (Linux Docker hairpin); recreating api and bacnet-scraper."
-  local dc
-  dc="$(docker_compose_cmd)" || return 1
-  (cd "$STACK_DIR" && $dc up -d api bacnet-scraper) || return 1
-  sleep 4
-  return 0
+  return 1
 }
 
 openfdd_api_gateway_check_once() {
-  docker exec -i openfdd_api python3 - <<'PYCHECK'
-import os
-import sys
-
-import httpx
-
-from openfdd_stack.platform.bacnet_host_gateway import bacnet_rpc_base_candidates
-
-primary = (os.environ.get("OFDD_BACNET_SERVER_URL") or "http://host.docker.internal:8080").rstrip(
-    "/"
-)
-headers = {}
-key = (os.environ.get("OFDD_BACNET_SERVER_API_KEY") or "").strip()
-if key:
-    headers["Authorization"] = "Bearer " + key
-payload = {"jsonrpc": "2.0", "id": "0", "method": "server_hello", "params": {}}
-last_err = None
-for base in bacnet_rpc_base_candidates(primary):
-    url = base + "/server_hello"
-    try:
-        r = httpx.post(url, json=payload, headers=headers, timeout=8.0, trust_env=False)
-    except Exception as exc:
-        last_err = exc
-        continue
-    if not r.is_success:
-        last_err = "HTTP %s %s" % (r.status_code, (r.text or "")[:120])
-        continue
-    try:
-        data = r.json()
-    except Exception:
-        last_err = "non-JSON"
-        continue
-    if isinstance(data, dict) and data.get("error"):
-        last_err = data.get("error")
-        continue
-    print("BACnet (API→gateway): OK via", base)
-    sys.exit(0)
-print("BACnet (API→gateway): FAIL —", last_err, "| tried:", bacnet_rpc_base_candidates(primary))
-sys.exit(1)
-PYCHECK
+  echo "BACnet gateway check: deprecated — rusty-bacnet runs in-process; nothing to probe."
+  return 0
 }
 
-# When the DIY gateway responds on the host but the API container cannot reach it, fix stack/.env and recreate services.
 bootstrap_maybe_autofix_bacnet_api_gateway() {
-  if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx openfdd_api; then
-    return 0
-  fi
-  if ! curl -sf --max-time 3 -X POST http://127.0.0.1:8080/server_hello -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","id":"0","method":"server_hello","params":{}}' >/dev/null 2>&1; then
-    return 0
-  fi
-  if openfdd_api_gateway_check_once; then
-    return 0
-  fi
-  if repair_stack_env_bacnet_server_url_for_docker_hairpin; then
-    openfdd_api_gateway_check_once || true
-  fi
   return 0
 }
 

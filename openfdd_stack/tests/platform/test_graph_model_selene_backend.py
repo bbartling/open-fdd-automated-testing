@@ -85,7 +85,7 @@ def test_get_config_from_graph_reads_from_selene(monkeypatch: pytest.MonkeyPatch
                         "labels": [SELENE_CONFIG_LABEL],
                         "properties": {
                             "rule_interval_hours": 3.0,
-                            "bacnet_site_id": "default",
+                            "bacnet_interface": "0.0.0.0",
                         },
                     }
                 ],
@@ -108,7 +108,7 @@ def test_get_config_from_graph_reads_from_selene(monkeypatch: pytest.MonkeyPatch
     )
     assert graph_model_mod.get_config_from_graph() == {
         "rule_interval_hours": 3.0,
-        "bacnet_site_id": "default",
+        "bacnet_interface": "0.0.0.0",
     }
 
 

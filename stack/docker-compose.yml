@@ -19,98 +19,43 @@ x-log-opts: &log-opts
 services:
   # BACnet/IP gateway — always-on server, JSON-RPC on 8080.
   # Optional BACnet2MQTT: set env in stack/.env or bootstrap with --with-mqtt-bridge (broker + bridge wiring).
-  bacnet-server:
-    build:
-      context: ../../diy-bacnet-server
-      dockerfile: Dockerfile
-    image: diy-bacnet-server:latest
-    container_name: openfdd_bacnet_server
-    network_mode: host
-    environment:
-      # Passed to bacpypes_server.main: OFDD_BACNET_DEVICE_INSTANCE, OFDD_BACNET_ADDRESS (bootstrap --bacnet-*). Name is fixed: open-fdd.
-      OFDD_BACNET_DEVICE_INSTANCE: "${OFDD_BACNET_DEVICE_INSTANCE:-3456788}"
-      OFDD_BACNET_ADDRESS: "${OFDD_BACNET_ADDRESS:-}"
-      # true = /docs on :8080 (HTTP lab); false when self-signed Caddy (bootstrap).
-      OFDD_ENABLE_OPENAPI_DOCS: "${OFDD_ENABLE_OPENAPI_DOCS:-false}"
-      # When set (bootstrap --caddy-self-signed), OpenAPI "servers" uses this so Swagger Try it out hits https://…/bacnet/…
-      BACNET_SWAGGER_SERVERS_URL: "${BACNET_SWAGGER_SERVERS_URL:-}"
-      # Same value as OFDD_BACNET_SERVER_API_KEY in stack/.env (bootstrap generates both).
-      BACNET_RPC_API_KEY: "${OFDD_BACNET_SERVER_API_KEY:-}"
-      BACNET2MQTT_ENABLED: "${BACNET2MQTT_ENABLED:-}"
-      MQTT_BROKER_URL: "${MQTT_BROKER_URL:-}"
-      HA_DISCOVERY_ENABLED: "${HA_DISCOVERY_ENABLED:-}"
-      # Default topic prefix from diy-bacnet-server (MQTT discovery); not an Open-FDD ↔ Home Assistant product tie-in.
-      HA_DISCOVERY_TOPIC: "${HA_DISCOVERY_TOPIC:-homeassistant}"
-      MQTT_BASE_TOPIC: "${MQTT_BASE_TOPIC:-bacnet2mqtt}"
-      MQTT_POLL_INTERVAL_SEC: "${MQTT_POLL_INTERVAL_SEC:-30}"
-      MQTT_USER: "${MQTT_USER:-}"
-      MQTT_PASSWORD: "${MQTT_PASSWORD:-}"
-      # Optional MQTT RPC gateway (cmd/ack/telemetry) — generic broker; see diy-bacnet-server README.
-      MQTT_RPC_GATEWAY_ENABLED: "${MQTT_RPC_GATEWAY_ENABLED:-}"
-      MQTT_RPC_BROKER_URL: "${MQTT_RPC_BROKER_URL:-}"
-      MQTT_RPC_TOPIC_PREFIX: "${MQTT_RPC_TOPIC_PREFIX:-diy-bacnet/gateway}"
-      MQTT_RPC_TELEMETRY_INTERVAL_SEC: "${MQTT_RPC_TELEMETRY_INTERVAL_SEC:-0}"
-      MQTT_RPC_CLIENT_ID: "${MQTT_RPC_CLIENT_ID:-}"
-    logging:
-      driver: json-file
-      options: *log-opts
-    # --public: bind HTTP :8080 on all host interfaces so Caddy (host.docker.internal:8080) can proxy /bacnet/*.
-    # Optional --address binds BACnet/IP (UDP) to a specific NIC (e.g. 192.168.204.11/24:47808); see diy-bacnet-server README.
-    command:
-      - sh
-      - -c
-      - |
-          set -eu
-          # Use $$VAR so Compose does not interpolate shell variables (see https://docs.docker.com/compose/environment-variables/ ).
-          if [ -n "$$OFDD_BACNET_ADDRESS" ]; then
-            exec python3 -u -m bacpypes_server.main \
-              --name open-fdd \
-              --instance "$$OFDD_BACNET_DEVICE_INSTANCE" \
-              --address "$$OFDD_BACNET_ADDRESS" \
-              --public
-          else
-            exec python3 -u -m bacpypes_server.main \
-              --name open-fdd \
-              --instance "$$OFDD_BACNET_DEVICE_INSTANCE" \
-              --public
-          fi
-    restart: unless-stopped
-    # BACnet/IP: UDP 47808. JSON-RPC HTTP :8080 (Swagger disabled; use Open-FDD /bacnet-tools).
-
-  # BACnet scraper — reads points via RPC, writes to TimescaleDB.
-  # Single gateway: OFDD_BACNET_SERVER_URL + OFDD_BACNET_SITE_ID (site tag for central DB).
-  # Multi-gateway (central aggregator): set OFDD_BACNET_GATEWAYS to JSON array of {url, site_id} (KG drives object list).
-  # Central-only (no local BACnet): omit bacnet-server and bacnet-scraper; remote gateways push via OFDD_DB_DSN + OFDD_BACNET_SITE_ID.
-  # When OFDD_API_KEY is set, the scraper calls GET /config (CRUD API) so scrape interval comes from the data model / Config UI; otherwise it uses OFDD_BACNET_SCRAPE_INTERVAL_MIN env.
+  # BACnet scraper — rusty-bacnet embedded driver (Phase 2.5d).
+  # Binds UDP/47808 directly on the host (via ``network_mode: host``)
+  # and reads :bacnet_object→:point bindings from SeleneDB each interval.
+  # No separate gateway container — diy-bacnet-server is gone.
   bacnet-scraper:
     build:
       context: ..
       dockerfile: stack/Dockerfile.bacnet_scraper
     container_name: openfdd_bacnet_scraper
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    # host networking so rusty-bacnet can bind the UDP/47808 BACnet/IP
+    # socket on the NIC that reaches the BAS. Linux only; on macOS/Windows
+    # the scraper container can run on the bridge + port-mapping instead
+    # (set OFDD_BACNET_INTERFACE to a container-local IP in that case).
+    network_mode: host
     environment:
-      # Override in stack/.env on Linux when hairpin blocks host.docker.internal (see README).
-      OFDD_BACNET_SERVER_URL: ${OFDD_BACNET_SERVER_URL:-http://host.docker.internal:8080}
-      OFDD_BACNET_ADDRESS: "${OFDD_BACNET_ADDRESS:-}"
-      OFDD_DB_DSN: postgresql://postgres:postgres@db:5432/openfdd
+      # BACnet/IP bind (rusty-bacnet BACnetClient).
+      OFDD_BACNET_INTERFACE: "${OFDD_BACNET_INTERFACE:-0.0.0.0}"
+      OFDD_BACNET_PORT: "${OFDD_BACNET_PORT:-47808}"
+      OFDD_BACNET_BROADCAST_ADDRESS: "${OFDD_BACNET_BROADCAST_ADDRESS:-255.255.255.255}"
+      OFDD_BACNET_APDU_TIMEOUT_MS: "${OFDD_BACNET_APDU_TIMEOUT_MS:-6000}"
+      OFDD_BACNET_DEVICE_INSTANCE: "${OFDD_BACNET_DEVICE_INSTANCE:-}"
+      # Scrape cadence.
       OFDD_BACNET_SCRAPE_ENABLED: "true"
-      # 1 = every minute (for tests); override via stack/.env or Config UI (scraper reads GET /config when OFDD_API_KEY set)
       OFDD_BACNET_SCRAPE_INTERVAL_MIN: "${OFDD_BACNET_SCRAPE_INTERVAL_MIN:-5}"
-      OFDD_BACNET_SITE_ID: "default"
-      # Optional JSON array of {url, site_id} for central multi-gateway (see compose comments above).
-      OFDD_BACNET_GATEWAYS: "${OFDD_BACNET_GATEWAYS:-}"
-      # Use service name 'api' so DNS resolves to current API container after restarts.
-      OFDD_API_URL: http://api:8000
-      OFDD_API_KEY: ${OFDD_API_KEY:-}
-      OFDD_BACNET_SERVER_API_KEY: ${OFDD_BACNET_SERVER_API_KEY:-}
+      # SeleneDB is the target for ts_write samples.
+      OFDD_STORAGE_BACKEND: "selene"
+      OFDD_SELENE_URL: "${OFDD_SELENE_URL:-http://selene:8080}"
+      OFDD_SELENE_IDENTITY: "${OFDD_SELENE_IDENTITY:-}"
+      OFDD_SELENE_SECRET: "${OFDD_SELENE_SECRET:-}"
+      # API is reachable via host networking → container-to-host path.
+      OFDD_API_URL: "${OFDD_API_URL:-http://localhost:8000}"
+      OFDD_API_KEY: "${OFDD_API_KEY:-}"
     volumes:
       - ../config:/app/config:ro
     depends_on:
       db:
         condition: service_healthy
-      bacnet-server:
-        condition: service_started
     restart: unless-stopped
     logging:
       driver: json-file
@@ -283,9 +228,15 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       OFDD_DB_DSN: postgresql://postgres:postgres@db:5432/openfdd
-      # From inside the API container, bacnet-server (network_mode: host) is on the host:
-      OFDD_BACNET_SERVER_URL: ${OFDD_BACNET_SERVER_URL:-http://host.docker.internal:8080}
-      OFDD_BACNET_ADDRESS: "${OFDD_BACNET_ADDRESS:-}"
+      # BACnet driver (rusty-bacnet, embedded). The API opens a fresh
+      # BipTransport per /bacnet/* request; these vars set the bind
+      # defaults. Container must reach the BAS network — on Linux this
+      # usually means running the api with ``network_mode: host`` too;
+      # on a bridge stack, route a secondary NIC or use a BBMD.
+      OFDD_BACNET_INTERFACE: "${OFDD_BACNET_INTERFACE:-0.0.0.0}"
+      OFDD_BACNET_PORT: "${OFDD_BACNET_PORT:-47808}"
+      OFDD_BACNET_BROADCAST_ADDRESS: "${OFDD_BACNET_BROADCAST_ADDRESS:-255.255.255.255}"
+      OFDD_BACNET_APDU_TIMEOUT_MS: "${OFDD_BACNET_APDU_TIMEOUT_MS:-6000}"
       # Absolute path so writes always go to the mounted volume (../config → /app/config)
       OFDD_BRICK_TTL_PATH: /app/config/data_model.ttl
       # Optional Bearer auth; bootstrap generates and writes to stack/.env unless --no-auth
@@ -298,8 +249,6 @@ services:
       OFDD_REFRESH_TOKEN_DAYS: ${OFDD_REFRESH_TOKEN_DAYS:-7}
       # Set true when TLS terminates at Caddy/nginx so refresh cookies use Secure (reads X-Forwarded-Proto).
       OFDD_TRUST_FORWARDED_PROTO: ${OFDD_TRUST_FORWARDED_PROTO:-false}
-      # Bearer for diy-bacnet-server JSON-RPC (must match BACNET_RPC_API_KEY on bacnet-server).
-      OFDD_BACNET_SERVER_API_KEY: ${OFDD_BACNET_SERVER_API_KEY:-}
       # true = /docs on :8000 (HTTP lab); false when self-signed Caddy (bootstrap).
       OFDD_ENABLE_OPENAPI_DOCS: "${OFDD_ENABLE_OPENAPI_DOCS:-false}"
       # External LLMs use Open-FDD endpoints directly (see docs/model-context endpoints).

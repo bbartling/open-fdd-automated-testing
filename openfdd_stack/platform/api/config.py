@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -25,9 +23,11 @@ CONFIG_KEYS = {
     "brick_ttl_dir",
     "bacnet_enabled",
     "bacnet_scrape_interval_min",
-    "bacnet_server_url",
-    "bacnet_site_id",
-    "bacnet_gateways",
+    "bacnet_interface",
+    "bacnet_port",
+    "bacnet_broadcast_address",
+    "bacnet_apdu_timeout_ms",
+    "bacnet_device_instance",
     "open_meteo_enabled",
     "open_meteo_interval_hours",
     "open_meteo_latitude",
@@ -52,13 +52,26 @@ class ConfigBody(BaseModel):
     bacnet_scrape_interval_min: int | None = Field(
         None, description="BACnet scrape interval (minutes)"
     )
-    bacnet_server_url: str | None = Field(None, description="diy-bacnet-server URL")
-    bacnet_site_id: str | None = Field(
-        None, description="Default site for BACnet scrape"
+    # Embedded rusty-bacnet driver settings; the diy-bacnet-server
+    # JSON-RPC proxy and its gateway URL are retired (Phase 2.5d).
+    bacnet_interface: str | None = Field(
+        None, description="BACnet/IP bind interface (default 0.0.0.0)"
     )
-    bacnet_gateways: str | None = Field(
+    bacnet_port: int | None = Field(
+        None, description="BACnet/IP UDP port (default 47808 / 0xBAC0)"
+    )
+    bacnet_broadcast_address: str | None = Field(
+        None, description="Subnet broadcast for Who-Is (default 255.255.255.255)"
+    )
+    bacnet_apdu_timeout_ms: int | None = Field(
+        None, description="APDU timeout in milliseconds (default 6000)"
+    )
+    bacnet_device_instance: int | None = Field(
         None,
-        description='JSON array of {"url","site_id"} for multi-gateway; BACnet addresses come from the data model',
+        description=(
+            "Optional local Device object instance (0-4194303). When set, the "
+            "driver registers itself as a Device on the network."
+        ),
     )
     open_meteo_enabled: bool | None = Field(None, description="Enable Open-Meteo fetch")
     open_meteo_interval_hours: int | None = Field(
@@ -77,21 +90,10 @@ class ConfigBody(BaseModel):
 
 
 def _normalize_config_for_display(raw: dict) -> dict:
-    """Apply display defaults and reflect runtime env overrides.
-
-    ``OFDD_BACNET_SERVER_URL`` (set by Docker Compose / ``stack/.env``) overrides ``bacnet_server_url``
-    in the returned dict so GET /config matches what ``get_platform_settings()`` uses. Without this,
-    the graph often still has ``http://localhost:8080`` while containers use a LAN or
-    ``host.docker.internal`` URL — operators and UI drift from reality.
-    """
+    """Apply display defaults before returning the config payload."""
     out = dict(raw)
     if out.get("rule_interval_hours") in (0, None):
         out["rule_interval_hours"] = 3.0
-    if out.get("bacnet_gateways") == "string":
-        out["bacnet_gateways"] = ""
-    env_bs = (os.environ.get("OFDD_BACNET_SERVER_URL") or "").strip()
-    if env_bs:
-        out["bacnet_server_url"] = env_bs.rstrip("/")
     return out
 
 

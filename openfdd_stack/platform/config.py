@@ -76,12 +76,18 @@ class PlatformSettings(BaseSettings):
     # Graph model: sync in-memory graph to data_model.ttl every N minutes
     graph_sync_interval_min: int = 5
 
-    # BACnet: use diy-bacnet-server JSON-RPC when set (e.g. http://localhost:8080)
-    bacnet_server_url: Optional[str] = None
-    # Site to tag when scraping (single gateway or remote gateway pushing to central)
-    bacnet_site_id: str = "default"
-    # Optional: multiple gateways (central aggregator). JSON array of {"url", "site_id", ...}; scrape uses KG points per site.
-    bacnet_gateways: Optional[str] = None
+    # BACnet/IP driver (rusty-bacnet, embedded) — every scrape cycle
+    # reads these from the pydantic settings layer. Container runs with
+    # ``network_mode: host`` so the UDP port is bound to the host NIC.
+    bacnet_interface: str = "0.0.0.0"
+    bacnet_port: int = 47808
+    bacnet_broadcast_address: str = "255.255.255.255"
+    bacnet_apdu_timeout_ms: int = 6000
+    # Optional: this node's BACnet device instance (0-4194303). When
+    # unset the driver acts as a pure client; set it to register the
+    # driver as a Device object on the network (required for COV
+    # subscriptions and some vendor gateways).
+    bacnet_device_instance: Optional[int] = None
 
     # API key for REST/WebSocket auth (Bearer). When set, required on all endpoints except /health, /, /app (and /app/*)
     api_key: Optional[str] = None
@@ -120,7 +126,13 @@ class PlatformSettings(BaseSettings):
 
 
 def get_platform_settings() -> PlatformSettings:
-    """Merge RDF overlay onto env-backed settings. ``OFDD_BACNET_SERVER_URL`` wins over graph when set."""
+    """Merge RDF overlay onto env-backed settings.
+
+    The RDF/graph config (``set_config_overlay``) contributes to the
+    merged view for keys the settings class knows about; anything
+    else is silently dropped. Env wins implicitly because pydantic
+    reads env first and the overlay only sets attributes that exist.
+    """
     s = PlatformSettings()
     overlay = get_config_overlay()
     key_to_attr = {
@@ -131,9 +143,6 @@ def get_platform_settings() -> PlatformSettings:
         attr = key_to_attr.get(k, k)
         if hasattr(s, attr):
             setattr(s, attr, v)
-    env_bacnet = (os.environ.get("OFDD_BACNET_SERVER_URL") or "").strip()
-    if env_bacnet:
-        s.bacnet_server_url = env_bacnet.rstrip("/")
     return s
 
 

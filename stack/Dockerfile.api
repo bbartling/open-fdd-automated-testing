@@ -7,8 +7,11 @@ WORKDIR /app
 
 COPY pyproject.toml README.md MANIFEST.in ./
 COPY openfdd_stack ./openfdd_stack
+# ``.[bacnet]`` pulls rusty-bacnet so the /bacnet/* routes can open a
+# BipTransport per-request. The container needs BAS-network reachability
+# (``network_mode: host`` on the Linux edge) for that to land traffic.
 RUN pip install --no-cache-dir "open-fdd>=2.3.1" \
- && pip install --no-cache-dir .
+ && pip install --no-cache-dir ".[bacnet]"
 COPY pdf ./pdf
 
 EXPOSE 8000

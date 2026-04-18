@@ -1,34 +1,23 @@
-"""Contract: where platform / BACnet URL configuration comes from (AI + operator context).
+"""Contract: platform-config layers + precedence.
 
-Historically three layers existed without a single written contract, which caused bugs:
+Three historical layers exist for platform config:
 
-1. **Code defaults** — ``openfdd_stack/platform/default_config.py`` → ``DEFAULT_PLATFORM_CONFIG``
-   (e.g. ``bacnet_server_url: http://localhost:8080``). Used when the RDF graph has no platform
-   config and for GET /config fallback.
+1. **Code defaults** — ``openfdd_stack/platform/default_config.py`` →
+   ``DEFAULT_PLATFORM_CONFIG``. Used when the RDF / Selene graph has
+   no platform config and for GET /config fallback.
 
-2. **RDF graph / ``config/data_model.ttl``** — ``ofdd:bacnetServerUrl`` is loaded at API startup into
-   ``set_config_overlay(get_config_from_graph())``. That value is the **persisted** operator-facing
-   config (PUT /config) and matches SPARQL / knowledge-graph workflows.
+2. **Graph / overlay** — ``set_config_overlay(get_config_from_graph())``
+   is the persisted operator-facing config (PUT /config). Lives in
+   ``config/data_model.ttl`` (Timescale backend) or the
+   ``:ofdd_platform_config`` node (Selene backend).
 
-3. **Process environment** — ``OFDD_BACNET_SERVER_URL`` in ``stack/.env``, injected by Docker Compose.
-   In containers, ``localhost`` in the graph points at the **container**, not the host. Docker stacks
-   therefore **must** set ``OFDD_BACNET_SERVER_URL`` to a host-reachable URL (LAN IP, host-gateway, etc.).
+3. **Process environment** — ``OFDD_*`` vars read directly by pydantic
+   at ``PlatformSettings()`` construction.
 
-**Contract (after regression fixes):**
-
-- ``get_platform_settings()``: after merging the RDF overlay onto Pydantic env, if
-  ``OFDD_BACNET_SERVER_URL`` is set in ``os.environ``, it **re-applies** and wins over
-  ``bacnet_server_url`` from the graph (``openfdd_stack/platform/config.py``).
-
-- ``GET /config``: response is normalized for display; ``OFDD_BACNET_SERVER_URL`` overrides the
-  returned ``bacnet_server_url`` so the Config UI matches runtime (``api/config.py``).
-
-- ``_effective_bacnet_server_url()`` (BACnet proxy): already preferred ``os.environ`` first; it must
-  stay aligned with ``get_platform_settings().bacnet_server_url`` for the default gateway.
-
-**What is *not* duplicated incorrectly:** keeping ``http://localhost:8080`` in the TTL for dev
-machines is fine; production Docker must set ``OFDD_BACNET_SERVER_URL``. The tests below lock
-precedence so graph-only localhost cannot silently override compose again.
+The legacy ``OFDD_BACNET_SERVER_URL`` env-wins-over-graph contract was
+retired in Phase 2.5d — there's no longer a gateway URL; rusty-bacnet
+runs in-process. The selene / storage-backend invariants below still
+hold.
 """
 
 from __future__ import annotations
@@ -39,60 +28,6 @@ pytest.importorskip("pydantic_settings")
 
 from openfdd_stack.platform.api.config import get_config
 from openfdd_stack.platform.config import get_platform_settings, set_config_overlay
-
-# Note: the historical ``_effective_bacnet_server_url`` contract test
-# (BACnet proxy URL resolution) was removed when the JSON-RPC proxy
-# path retired in slice 2.5c. The env-wins-over-graph invariant is
-# still covered by
-# ``test_get_config_display_overrides_graph_bacnet_url_with_env``
-# below, which exercises the same precedence at the /config layer.
-
-
-def test_get_config_display_overrides_graph_bacnet_url_with_env(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """GET /config must show the same BACnet URL the API uses when OFDD_BACNET_SERVER_URL is set."""
-    monkeypatch.setenv("OFDD_BACNET_SERVER_URL", "http://192.168.204.99:8080")
-    set_config_overlay(
-        {
-            "bacnet_server_url": "http://localhost:8080",
-            "bacnet_site_id": "default",
-            "rule_interval_hours": 3.0,
-        }
-    )
-    try:
-        body = get_config()
-        assert body["bacnet_server_url"] == "http://192.168.204.99:8080"
-    finally:
-        set_config_overlay({})
-        monkeypatch.delenv("OFDD_BACNET_SERVER_URL", raising=False)
-
-
-def test_default_platform_config_constant_matches_graph_dev_literal() -> None:
-    """DEFAULT_PLATFORM_CONFIG and typical data_model.ttl both use localhost for host-side dev."""
-    from openfdd_stack.platform.default_config import (
-        DEFAULT_BACNET_SERVER_URL,
-        DEFAULT_PLATFORM_CONFIG,
-    )
-
-    assert DEFAULT_PLATFORM_CONFIG["bacnet_server_url"] == DEFAULT_BACNET_SERVER_URL
-    assert DEFAULT_BACNET_SERVER_URL == "http://localhost:8080"
-
-
-def test_graph_only_bacnet_url_used_when_env_unset(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Without OFDD_BACNET_SERVER_URL, graph overlay is authoritative for settings and GET /config."""
-    monkeypatch.delenv("OFDD_BACNET_SERVER_URL", raising=False)
-    set_config_overlay({"bacnet_server_url": "http://graph-only.example:8080"})
-    try:
-        assert (
-            get_platform_settings().bacnet_server_url
-            == "http://graph-only.example:8080"
-        )
-        assert get_config()["bacnet_server_url"] == "http://graph-only.example:8080"
-    finally:
-        set_config_overlay({})
 
 
 def test_storage_backend_defaults_to_timescale(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -126,3 +61,36 @@ def test_selene_pack_order_contains_pinned_packs(
     monkeypatch.delenv("OFDD_SELENE_PACK_ORDER", raising=False)
     order = [s.strip() for s in get_platform_settings().selene_pack_order.split(",")]
     assert order[:2] == ["hvac-fdd", "bacnet-driver"]
+
+
+def test_bacnet_driver_settings_have_embedded_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """rusty-bacnet driver defaults: bind 0.0.0.0:47808 (ASHRAE 135 default)."""
+    for k in (
+        "OFDD_BACNET_INTERFACE",
+        "OFDD_BACNET_PORT",
+        "OFDD_BACNET_BROADCAST_ADDRESS",
+        "OFDD_BACNET_APDU_TIMEOUT_MS",
+    ):
+        monkeypatch.delenv(k, raising=False)
+    set_config_overlay({})
+    s = get_platform_settings()
+    assert s.bacnet_interface == "0.0.0.0"
+    assert s.bacnet_port == 47808
+    assert s.bacnet_broadcast_address == "255.255.255.255"
+    assert s.bacnet_apdu_timeout_ms == 6000
+
+
+def test_bacnet_port_graph_overlay_wins_over_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Graph overlay can override the port default (operator PUT /config)."""
+    monkeypatch.delenv("OFDD_BACNET_PORT", raising=False)
+    set_config_overlay({"bacnet_port": 47809})
+    try:
+        assert get_platform_settings().bacnet_port == 47809
+        # And it flows through GET /config response so the UI matches runtime.
+        assert get_config()["bacnet_port"] == 47809
+    finally:
+        set_config_overlay({})

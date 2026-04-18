@@ -88,7 +88,8 @@ def test_reset_graph_to_db_only_seeds_default_config_when_graph_empty():
     cfg = get_config_from_graph()
     assert cfg, "Graph should have config after reset (seeded with default)"
     assert cfg.get("rule_interval_hours") is not None
-    assert cfg.get("bacnet_server_url") is not None
+    # New BACnet driver config field (rusty-bacnet embedded).
+    assert cfg.get("bacnet_interface") is not None
     # Defaults from default_config
     assert cfg.get("rules_dir") == DEFAULT_PLATFORM_CONFIG["rules_dir"]
     assert (
@@ -172,7 +173,6 @@ def test_reset_graph_to_db_only_preserves_existing_config():
     custom = {
         "rule_interval_hours": 2.5,
         "lookback_days": 7,
-        "bacnet_site_id": "building-a",
     }
     set_config_in_graph(custom)
     with patch("openfdd_stack.platform.graph_model.sync_brick_from_db"):
@@ -180,4 +180,3 @@ def test_reset_graph_to_db_only_preserves_existing_config():
     cfg = get_config_from_graph()
     assert cfg.get("rule_interval_hours") == 2.5
     assert cfg.get("lookback_days") == 7
-    assert cfg.get("bacnet_site_id") == "building-a"

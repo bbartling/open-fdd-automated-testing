@@ -13,7 +13,7 @@ from openfdd_stack.platform.config import (
 
 
 def test_default_platform_config_keys_match_api():
-    """DEFAULT_PLATFORM_CONFIG only has keys allowed by the config API (CONFIG_KEYS); optional keys like bacnet_gateways may be omitted."""
+    """DEFAULT_PLATFORM_CONFIG only has keys allowed by the config API (CONFIG_KEYS)."""
     from openfdd_stack.platform.default_config import DEFAULT_PLATFORM_CONFIG
     from openfdd_stack.platform.api.config import CONFIG_KEYS
 
@@ -24,7 +24,9 @@ def test_default_platform_config_keys_match_api():
     # All non-optional defaults that GET /config should expose when graph is empty
     assert "brick_ttl_dir" in DEFAULT_PLATFORM_CONFIG
     assert "rule_interval_hours" in DEFAULT_PLATFORM_CONFIG
-    assert "bacnet_server_url" in DEFAULT_PLATFORM_CONFIG
+    # New BACnet driver config surface (rusty-bacnet embedded).
+    assert "bacnet_interface" in DEFAULT_PLATFORM_CONFIG
+    assert "bacnet_port" in DEFAULT_PLATFORM_CONFIG
 
 
 def test_config_exposes_fdd_rule_settings():
@@ -51,13 +53,14 @@ def test_config_exposes_fdd_rule_settings():
 
 
 def test_default_platform_config_values():
-    """DEFAULT_PLATFORM_CONFIG has expected default values (brick_ttl_dir, rule_interval_hours, etc.)."""
+    """DEFAULT_PLATFORM_CONFIG has expected default values."""
     from openfdd_stack.platform.default_config import (
-        DEFAULT_PLATFORM_CONFIG,
+        DEFAULT_BACNET_INTERFACE,
+        DEFAULT_BACNET_PORT,
         DEFAULT_BRICK_TTL_DIR,
-        DEFAULT_RULE_INTERVAL_HOURS,
-        DEFAULT_BACNET_SERVER_URL,
         DEFAULT_GRAPH_SYNC_INTERVAL_MIN,
+        DEFAULT_PLATFORM_CONFIG,
+        DEFAULT_RULE_INTERVAL_HOURS,
     )
 
     assert DEFAULT_PLATFORM_CONFIG["brick_ttl_dir"] == DEFAULT_BRICK_TTL_DIR == "config"
@@ -66,11 +69,9 @@ def test_default_platform_config_values():
         == DEFAULT_RULE_INTERVAL_HOURS
         == 3.0
     )
-    assert (
-        DEFAULT_PLATFORM_CONFIG["bacnet_server_url"]
-        == DEFAULT_BACNET_SERVER_URL
-        == "http://localhost:8080"
-    )
+    # New BACnet driver config surface (rusty-bacnet embedded).
+    assert DEFAULT_PLATFORM_CONFIG["bacnet_interface"] == DEFAULT_BACNET_INTERFACE
+    assert DEFAULT_PLATFORM_CONFIG["bacnet_port"] == DEFAULT_BACNET_PORT == 47808
     assert (
         DEFAULT_PLATFORM_CONFIG["graph_sync_interval_min"]
         == DEFAULT_GRAPH_SYNC_INTERVAL_MIN
@@ -113,22 +114,15 @@ def test_platform_settings_defaults():
 
 
 def test_platform_settings_overlay(monkeypatch):
-    """Overlay overrides env for runtime config; OFDD_BACNET_SERVER_URL beats graph bacnet_server_url."""
-    monkeypatch.delenv("OFDD_BACNET_SERVER_URL", raising=False)
+    """RDF overlay contributes to the merged view for keys the settings
+    class knows about; env still wins via pydantic's normal precedence."""
     set_config_overlay({})
     s = get_platform_settings()
     assert s.rule_interval_hours == 3.0
-    set_config_overlay(
-        {"rule_interval_hours": 0.1, "bacnet_server_url": "http://localhost:8080"}
-    )
+    # Overlay updates a graph-backed field.
+    set_config_overlay({"rule_interval_hours": 0.1, "bacnet_port": 47809})
     s2 = get_platform_settings()
     assert s2.rule_interval_hours == 0.1
-    assert s2.bacnet_server_url == "http://localhost:8080"
-
-    monkeypatch.setenv("OFDD_BACNET_SERVER_URL", "http://192.168.1.50:8080")
-    s3 = get_platform_settings()
-    assert s3.rule_interval_hours == 0.1
-    assert s3.bacnet_server_url == "http://192.168.1.50:8080"
+    assert s2.bacnet_port == 47809
 
     set_config_overlay({})
-    monkeypatch.delenv("OFDD_BACNET_SERVER_URL", raising=False)

@@ -13,13 +13,15 @@ DEFAULT_RULES_DIR = "stack/rules"
 # Brick / data model TTL location
 DEFAULT_BRICK_TTL_DIR = "config"
 
-# BACnet driver — host-side dev default (browser on same machine as diy-bacnet).
-# Docker: set OFDD_BACNET_SERVER_URL in stack/.env (overrides graph + this default at runtime).
+# BACnet/IP driver (rusty-bacnet, embedded).
+# Docker: container runs ``network_mode: host`` so the UDP port is
+# bound to the host NIC; override via ``OFDD_BACNET_*`` env vars.
 DEFAULT_BACNET_ENABLED = True
 DEFAULT_BACNET_SCRAPE_INTERVAL_MIN = 1  # 5 in production
-DEFAULT_BACNET_SERVER_URL = "http://localhost:8080"
-DEFAULT_BACNET_SITE_ID = "default"
-DEFAULT_BACNET_GATEWAYS = ""  # JSON array of gateways; future multi-gateway feature
+DEFAULT_BACNET_INTERFACE = "0.0.0.0"
+DEFAULT_BACNET_PORT = 47808
+DEFAULT_BACNET_BROADCAST_ADDRESS = "255.255.255.255"
+DEFAULT_BACNET_APDU_TIMEOUT_MS = 6000
 
 # Open-Meteo weather
 DEFAULT_OPEN_METEO_ENABLED = True
@@ -41,9 +43,10 @@ DEFAULT_PLATFORM_CONFIG: dict = {
     "brick_ttl_dir": DEFAULT_BRICK_TTL_DIR,
     "bacnet_enabled": DEFAULT_BACNET_ENABLED,
     "bacnet_scrape_interval_min": DEFAULT_BACNET_SCRAPE_INTERVAL_MIN,
-    "bacnet_server_url": DEFAULT_BACNET_SERVER_URL,
-    "bacnet_site_id": DEFAULT_BACNET_SITE_ID,
-    "bacnet_gateways": DEFAULT_BACNET_GATEWAYS,
+    "bacnet_interface": DEFAULT_BACNET_INTERFACE,
+    "bacnet_port": DEFAULT_BACNET_PORT,
+    "bacnet_broadcast_address": DEFAULT_BACNET_BROADCAST_ADDRESS,
+    "bacnet_apdu_timeout_ms": DEFAULT_BACNET_APDU_TIMEOUT_MS,
     "open_meteo_enabled": DEFAULT_OPEN_METEO_ENABLED,
     "open_meteo_interval_hours": DEFAULT_OPEN_METEO_INTERVAL_HOURS,
     "open_meteo_latitude": DEFAULT_OPEN_METEO_LATITUDE,
