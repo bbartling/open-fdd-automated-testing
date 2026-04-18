@@ -21,7 +21,7 @@ from fastapi import APIRouter, Body, File, HTTPException, Query, UploadFile
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from openfdd_stack.platform.config import get_platform_settings
+from openfdd_stack.platform.config import get_platform_settings, is_selene_backend
 from openfdd_stack.platform.database import get_conn
 from openfdd_stack.platform.modbus_point_config import normalize_modbus_config
 from openfdd_stack.platform.data_model_ttl import (
@@ -552,7 +552,7 @@ def _normalize_ttl_id_to_uuid(s: str) -> str | None:
                 try:
                     UUID(tail)
                     return tail
-                except (ValueError, TypeError):
+                except (ValueError, TypeError):  # fmt: skip
                     pass
     return None
 
@@ -566,13 +566,13 @@ def _parse_uuid_or_400(
     s = value.strip()
     try:
         return UUID(s)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError):  # fmt: skip
         pass
     normalized = _normalize_ttl_id_to_uuid(s)
     if normalized:
         try:
             return UUID(normalized)
-        except (ValueError, TypeError):
+        except (ValueError, TypeError):  # fmt: skip
             pass
     raise HTTPException(
         400,
@@ -596,7 +596,7 @@ def _is_uuid(s: str | None) -> bool:
     try:
         UUID(s.strip())
         return True
-    except (ValueError, TypeError):
+    except (ValueError, TypeError):  # fmt: skip
         return False
 
 
@@ -693,10 +693,16 @@ def _upsert_equipment_metadata(
         # Equipment row missing; nothing to update.
         return
     current = row.get("metadata") if isinstance(row.get("metadata"), dict) else None
-    merged = _deep_merge_dict(current if isinstance(current, dict) else {}, metadata or {})
+    merged = _deep_merge_dict(
+        current if isinstance(current, dict) else {}, metadata or {}
+    )
     if engineering is not None:
         merged["engineering"] = _deep_merge_dict(
-            merged.get("engineering") if isinstance(merged.get("engineering"), dict) else {},
+            (
+                merged.get("engineering")
+                if isinstance(merged.get("engineering"), dict)
+                else {}
+            ),
             engineering if isinstance(engineering, dict) else {},
         )
     cur.execute(
@@ -788,7 +794,11 @@ def _create_or_upsert_without_point_id(
         equip_uuid_str = None
     _polling = point_row.polling if point_row.polling is not None else True
     _brick = _normalize_brick_type(point_row.brick_type)
-    _fdd = point_row.rule_input if point_row.rule_input is not None else point_row.fdd_input
+    _fdd = (
+        point_row.rule_input
+        if point_row.rule_input is not None
+        else point_row.fdd_input
+    )
     if modbus_path:
         insert_params = (
             str(site_uuid),
@@ -918,7 +928,7 @@ def import_data_model(body: DataModelImportBody):
                         sid = str(UUID(str(row.site_id).strip()))
                         if sid not in existing_site_ids:
                             missing_sites.append(str(row.site_id).strip())
-                    except (ValueError, TypeError):
+                    except (ValueError, TypeError):  # fmt: skip
                         pass
             for eq in body.equipment:
                 if eq.site_id and str(eq.site_id).strip():
@@ -926,7 +936,7 @@ def import_data_model(body: DataModelImportBody):
                         sid = str(UUID(str(eq.site_id).strip()))
                         if sid not in existing_site_ids:
                             missing_sites.append(str(eq.site_id).strip())
-                    except (ValueError, TypeError):
+                    except (ValueError, TypeError):  # fmt: skip
                         pass
             if missing_sites:
                 unique_missing = sorted(set(missing_sites))
@@ -943,13 +953,13 @@ def import_data_model(body: DataModelImportBody):
                 if row.site_id and str(row.site_id).strip():
                     try:
                         payload_site_ids.add(str(UUID(str(row.site_id).strip())))
-                    except (ValueError, TypeError):
+                    except (ValueError, TypeError):  # fmt: skip
                         pass
             for eq in body.equipment:
                 if eq.site_id and str(eq.site_id).strip():
                     try:
                         payload_site_ids.add(str(UUID(str(eq.site_id).strip())))
-                    except (ValueError, TypeError):
+                    except (ValueError, TypeError):  # fmt: skip
                         pass
             inferred_payload_site_id: str | None = (
                 next(iter(payload_site_ids)) if len(payload_site_ids) == 1 else None
@@ -1020,14 +1030,11 @@ def import_data_model(body: DataModelImportBody):
                                     "from GET /sites",
                                 )
                                 _eq_t = (
-                                    (row.equipment_type or "Equipment").strip()
-                                    or "Equipment"
-                                )
+                                    row.equipment_type or "Equipment"
+                                ).strip() or "Equipment"
                                 updates.append("equipment_id = %s")
                                 params.append(
-                                    _ensure_equipment(
-                                        cur, _site_u, _eq_name, _eq_t
-                                    )
+                                    _ensure_equipment(cur, _site_u, _eq_name, _eq_t)
                                 )
                     if row.external_id is not None:
                         updates.append("external_id = %s")
@@ -1258,7 +1265,7 @@ def _resolve_site_id_by_name(cur: Any, name: str | None) -> str | None:
     try:
         UUID(s)
         return s
-    except (ValueError, TypeError):
+    except (ValueError, TypeError):  # fmt: skip
         pass
     cur.execute(
         """SELECT id FROM sites WHERE name ILIKE %s OR description ILIKE %s LIMIT 1""",
@@ -1304,6 +1311,20 @@ def get_ttl(
     ),
 ):
     """Return full data model TTL (Brick from DB + BACnet from in-memory graph). Omit for all sites."""
+    # Selene is the source of truth: ask it for the RDF export directly.
+    # ``site_id`` / ``save`` are no-ops here — the graph is authoritative, no
+    # file sync needed, and portfolio-scoping happens in GQL downstream.
+    if is_selene_backend():
+        from openfdd_stack.platform.selene import make_selene_client_from_settings
+        from openfdd_stack.platform.selene.exceptions import SeleneError
+
+        try:
+            with make_selene_client_from_settings() as client:
+                ttl = client.export_rdf(rdf_format="turtle")
+        except SeleneError as exc:
+            raise HTTPException(502, f"selene rdf export failed: {exc}") from exc
+        return PlainTextResponse(ttl, media_type="text/turtle")
+
     _site_id = _resolve_site_filter(site_id)
     if site_id and site_id.strip() and _site_id is None:
         raise HTTPException(404, f"No site found for name/description: {site_id!r}")

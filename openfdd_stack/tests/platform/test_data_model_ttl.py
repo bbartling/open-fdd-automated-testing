@@ -5,7 +5,12 @@ from uuid import uuid4
 
 import pytest
 
-from openfdd_stack.platform.data_model_ttl import build_ttl_from_db, _escape, _prefixes
+from openfdd_stack.platform.data_model_ttl import (
+    _escape,
+    _prefixes,
+    build_ttl_from_db,
+    sync_ttl_to_file,
+)
 
 
 def _mock_cursor(sites, equipment, points, energy_rows=None):
@@ -355,3 +360,16 @@ def test_build_ttl_energy_calc_includes_penalty_catalog_seq():
     with patch("openfdd_stack.platform.data_model_ttl.get_conn", return_value=conn):
         ttl = build_ttl_from_db()
     assert "ofdd:penaltyCatalogSeq 1" in ttl
+
+
+def test_sync_ttl_to_file_is_noop_when_backend_is_selene(monkeypatch):
+    """Selene owns the graph — no file write, no Postgres read, no timer."""
+    monkeypatch.setenv("OFDD_STORAGE_BACKEND", "selene")
+
+    # If the function reached the Postgres path, this patch would fire. The
+    # assertion confirms the short-circuit took effect.
+    def boom():
+        raise AssertionError("should not touch Postgres on selene backend")
+
+    with patch("openfdd_stack.platform.data_model_ttl.get_conn", side_effect=boom):
+        sync_ttl_to_file(immediate=True)

@@ -412,6 +412,34 @@ class SeleneClient:
         return self.gql_rows(query, params)
 
     # ------------------------------------------------------------------
+    # RDF export
+    # ------------------------------------------------------------------
+
+    def export_rdf(
+        self,
+        *,
+        rdf_format: str = "turtle",
+        graphs: str = "all",
+    ) -> str:
+        """GET /graph/rdf — export the whole property graph as RDF.
+
+        Returned media type is ``text/turtle`` (or the negotiated format),
+        **not** JSON. Callers that need to persist the TTL or hand it to
+        an RDF parser get the raw text. No unwrap, no post-processing.
+
+        ``rdf_format``: ``turtle`` (default), ``ntriples``, or ``nquads``.
+        ``graphs``: ``all`` (default); scoped graph names when Selene
+        supports multi-graph isolation.
+        """
+        response = self._request(
+            "GET",
+            "/graph/rdf",
+            params={"format": rdf_format, "graphs": graphs},
+            extra_headers={"Accept": "text/turtle"},
+        )
+        return response.text
+
+    # ------------------------------------------------------------------
     # Schemas
     # ------------------------------------------------------------------
 

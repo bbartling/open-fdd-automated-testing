@@ -21,7 +21,7 @@ from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
 
-from openfdd_stack.platform.config import get_platform_settings
+from openfdd_stack.platform.config import get_platform_settings, is_selene_backend
 from openfdd_stack.platform.database import get_conn
 
 BACNET_SECTION_MARKER = "# --- BACnet discovery ---"
@@ -86,7 +86,12 @@ def _append_point(lines: list[str], p: dict[str, Any], parent_uri: str) -> None:
     bacnet_id = p.get("bacnet_device_id")
     obj_id = p.get("object_identifier")
     obj_name = p.get("object_name")
-    has_bacnet_ref = bool(bacnet_id is not None and str(bacnet_id).strip() and obj_id is not None and str(obj_id).strip())
+    has_bacnet_ref = bool(
+        bacnet_id is not None
+        and str(bacnet_id).strip()
+        and obj_id is not None
+        and str(obj_id).strip()
+    )
     ts_id = _escape(p["external_id"])
     stored_at = _escape(_timeseries_store_uri())
     if bacnet_id is not None and str(bacnet_id).strip():
@@ -102,8 +107,12 @@ def _append_point(lines: list[str], p: dict[str, Any], parent_uri: str) -> None:
         lines.append("        a ref:BACnetReference ;")
         lines.append(f'        bacnet:object-identifier "{boid}" ;')
         if obj_name is not None and str(obj_name).strip():
-            lines.append(f'        bacnet:object-name "{_escape(str(obj_name).strip())}" ;')
-        lines.append(f'        brick:BACnetURI "bacnet://{bdev}/{boid}/present-value" ;')
+            lines.append(
+                f'        bacnet:object-name "{_escape(str(obj_name).strip())}" ;'
+            )
+        lines.append(
+            f'        brick:BACnetURI "bacnet://{bdev}/{boid}/present-value" ;'
+        )
         lines.append(f"        bacnet:objectOf <bacnet://{bdev}>")
         lines.append("    ] ;")
     lines.append("    ref:hasExternalReference [")
@@ -215,7 +224,7 @@ def build_ttl_from_db(site_id: UUID | None = None) -> str:
                 lines.append("    " + " ;\n    ".join(extra) + " ;")
             lines.append(f'    ofdd:equipmentType "{etype}"')
             if etype == "Weather_Service" or ename == "Open-Meteo":
-                lines.append(' ;')
+                lines.append(" ;")
                 lines.append('    ofdd:dataSource "open_meteo" .')
             else:
                 lines.append(" .")
@@ -252,9 +261,13 @@ def _append_energy_calculation(
     label = _escape((ec.get("name") or ec.get("external_id") or "calc"))
     lines.append(f"{uri} a ofdd:EnergyCalculation ;")
     lines.append(f'    rdfs:label "{label}" ;')
-    lines.append(f'    ofdd:calcExternalId "{_escape(str(ec.get("external_id") or ""))}" ;')
+    lines.append(
+        f'    ofdd:calcExternalId "{_escape(str(ec.get("external_id") or ""))}" ;'
+    )
     lines.append(f'    ofdd:calcType "{_escape(str(ec.get("calc_type") or ""))}" ;')
-    lines.append(f"    ofdd:calcEnabled {'true' if ec.get('enabled', True) else 'false'} ;")
+    lines.append(
+        f"    ofdd:calcEnabled {'true' if ec.get('enabled', True) else 'false'} ;"
+    )
     desc = ec.get("description")
     if desc is not None and str(desc).strip():
         lines.append(f'    rdfs:comment "{_escape(str(desc).strip())}" ;')
@@ -262,12 +275,14 @@ def _append_energy_calculation(
     seq = params.get("_penalty_catalog_seq")
     if seq is not None:
         try:
-            lines.append(f'    ofdd:penaltyCatalogSeq {int(seq)} ;')
-        except (TypeError, ValueError):
+            lines.append(f"    ofdd:penaltyCatalogSeq {int(seq)} ;")
+        except (TypeError, ValueError):  # fmt: skip
             pass
     pj = json.dumps(params, separators=(",", ":"), sort_keys=True)
     lines.append(f'    ofdd:calcParameters "{_escape(pj)}" ;')
-    binds = ec.get("point_bindings") if isinstance(ec.get("point_bindings"), dict) else {}
+    binds = (
+        ec.get("point_bindings") if isinstance(ec.get("point_bindings"), dict) else {}
+    )
     bj = json.dumps(binds, separators=(",", ":"), sort_keys=True)
     lines.append(f'    ofdd:calcPointBindings "{_escape(bj)}" ;')
     eq_id = ec.get("equipment_id")
@@ -354,9 +369,13 @@ def _append_equipment_engineering(
             if cp.get("name"):
                 lines.append(f'{cp_ref} rdfs:label "{_escape(str(cp["name"]))}" .')
             if cp.get("id"):
-                lines.append(f'{cp_ref} ofdd:connectionPointId "{_escape(str(cp["id"]))}" .')
+                lines.append(
+                    f'{cp_ref} ofdd:connectionPointId "{_escape(str(cp["id"]))}" .'
+                )
             if cp.get("medium"):
-                lines.append(f'{cp_ref} ofdd:connectionMedium "{_escape(str(cp["medium"]))}" .')
+                lines.append(
+                    f'{cp_ref} ofdd:connectionMedium "{_escape(str(cp["medium"]))}" .'
+                )
 
     connections = topology.get("connections")
     if isinstance(connections, list):
@@ -375,11 +394,17 @@ def _append_equipment_engineering(
             lines.append(f"{cn_ref} a {cn_class} .")
             lines.append(f"{equipment_ref} s223:cnx {cn_ref} .")
             if cn.get("from"):
-                lines.append(f'{cn_ref} ofdd:connectsFromRef "{_escape(str(cn["from"]))}" .')
+                lines.append(
+                    f'{cn_ref} ofdd:connectsFromRef "{_escape(str(cn["from"]))}" .'
+                )
             if cn.get("to"):
-                lines.append(f'{cn_ref} ofdd:connectsToRef "{_escape(str(cn["to"]))}" .')
+                lines.append(
+                    f'{cn_ref} ofdd:connectsToRef "{_escape(str(cn["to"]))}" .'
+                )
             if cn.get("medium"):
-                lines.append(f'{cn_ref} ofdd:connectionMedium "{_escape(str(cn["medium"]))}" .')
+                lines.append(
+                    f'{cn_ref} ofdd:connectionMedium "{_escape(str(cn["medium"]))}" .'
+                )
 
 
 def _get_unified_ttl_path() -> Path:
@@ -428,6 +453,7 @@ def _do_sync() -> None:
     global _sync_timer
     try:
         from openfdd_stack.platform.graph_model import write_ttl_to_file
+
         write_ttl_to_file()
     except Exception:
         pass
@@ -461,7 +487,14 @@ def sync_ttl_to_file(
     triggers one write. When immediate=True (e.g. GET /data-model/ttl?save=true),
     writes immediately. File always contains the full model (site_id is ignored
     for the on-disk file).
+
+    When ``OFDD_STORAGE_BACKEND=selene`` the Selene graph is authoritative and
+    the TTL file is obsolete — this function short-circuits to a no-op so the
+    six CRUD callers in ``api/`` don't need individual ``is_selene_backend()``
+    guards.
     """
+    if is_selene_backend():
+        return
     global _sync_timer
     if immediate:
         with _sync_timer_lock:
@@ -479,6 +512,7 @@ def sync_ttl_to_file(
 
 # Flush any pending sync on process exit so the file is not stale
 atexit.register(_flush_sync)
+
 
 # Remove legacy config/bacnet_scan.ttl on load so an old API process can't leave it behind
 def _cleanup_legacy_bacnet_file_on_load() -> None:
@@ -525,6 +559,7 @@ def store_bacnet_scan_ttl(ttl: str) -> None:
     """
     try:
         from openfdd_stack.platform.graph_model import merge_bacnet_ttl
+
         merge_bacnet_ttl(ttl)
     except Exception:
         pass
@@ -538,7 +573,7 @@ def _rdf_value_to_int(v: Any) -> int:
         return 0
     try:
         return int(getattr(v, "value", v))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError):  # fmt: skip
         return 0
 
 
@@ -588,7 +623,7 @@ def parse_bacnet_ttl_to_discovery(ttl: str) -> tuple[list[dict], list[dict]]:
                 inst = int(oid.split(",", 1)[1])
                 if inst == di and oname:
                     device_names[di] = oname
-            except (ValueError, IndexError):
+            except (ValueError, IndexError):  # fmt: skip
                 pass
     devices = [
         {"device_instance": di, "name": device_names.get(di) or f"BACnet device {di}"}
@@ -615,6 +650,7 @@ def get_ttl_for_sparql(site_id: UUID | None = None) -> str:
     """
     try:
         from openfdd_stack.platform.graph_model import get_ttl_for_sparql as _graph_ttl
+
         return _graph_ttl(site_id=site_id)
     except Exception:
         db_ttl = build_ttl_from_db(site_id=site_id)
@@ -623,6 +659,7 @@ def get_ttl_for_sparql(site_id: UUID | None = None) -> str:
             return db_ttl
         try:
             from rdflib import Graph
+
             g = Graph()
             g.parse(data=db_ttl, format="turtle")
             g.parse(data=bacnet_ttl, format="turtle")
