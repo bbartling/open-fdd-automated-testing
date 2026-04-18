@@ -4,9 +4,6 @@ import {
   bacnetReadProperty,
   bacnetReadMultiple,
   bacnetWriteProperty,
-  bacnetSupervisoryLogicChecks,
-  bacnetReadPointPriorityArray,
-  bacnetModbusReadRegisters,
 } from "@/lib/crud-api";
 
 describe("BACnet proxy API helpers", () => {
@@ -56,42 +53,6 @@ describe("BACnet proxy API helpers", () => {
     );
     expect(body.request.value).toBeNull();
     expect(body.request.priority).toBe(1);
-  });
-
-  it("bacnetSupervisoryLogicChecks uses instance shape", async () => {
-    await bacnetSupervisoryLogicChecks({ instance: { device_instance: 99 } }, "default");
-    const raw = (vi.mocked(api.apiFetch).mock.calls[0][1] as { body: string }).body;
-    expect(JSON.parse(raw).instance.device_instance).toBe(99);
-  });
-
-  it("bacnetReadPointPriorityArray posts request wrapper", async () => {
-    await bacnetReadPointPriorityArray(
-      { request: { device_instance: 3, object_identifier: "ao,2" } },
-      "default",
-    );
-    expect(api.apiFetch).toHaveBeenCalledWith(
-      "/bacnet/read_point_priority_array?gateway=default",
-      expect.any(Object),
-    );
-  });
-
-  it("bacnetModbusReadRegisters posts to /bacnet/modbus_read_registers with gateway query", async () => {
-    await bacnetModbusReadRegisters(
-      {
-        host: "10.0.0.1",
-        port: 502,
-        unit_id: 1,
-        registers: [{ address: 0, count: 1, function: "holding" }],
-      },
-      "default",
-    );
-    expect(api.apiFetch).toHaveBeenCalledWith(
-      "/bacnet/modbus_read_registers?gateway=default",
-      expect.objectContaining({
-        method: "POST",
-        body: expect.stringContaining("10.0.0.1"),
-      }),
-    );
   });
 
   it("bacnetReadMultiple forwards request array", async () => {

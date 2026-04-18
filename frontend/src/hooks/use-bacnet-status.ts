@@ -14,7 +14,7 @@ export const SERVER_HELLO_REQUEST_INIT: RequestInit = {
   body: JSON.stringify({}),
 };
 
-/** POST /bacnet/server_hello — returns gateway and mqtt_bridge status. */
+/** POST /bacnet/server_hello — echoes the embedded rusty-bacnet driver config. */
 export function useBacnetStatus() {
   return useQuery<BacnetServerHelloResponse>({
     queryKey: ["bacnet", "server_hello"],
@@ -25,24 +25,22 @@ export function useBacnetStatus() {
         const data = await apiFetch<BacnetServerHelloResponse>(path, SERVER_HELLO_REQUEST_INIT);
         if (!data.ok) {
           stackStatusConsoleError(
-            "POST /bacnet/server_hello returned ok: false (API could not reach the DIY BACnet gateway)",
+            "POST /bacnet/server_hello returned ok: false",
             {
               openfddApiUrl: url,
-              gatewayUrlTheApiUses: data.gateway_url ?? null,
+              driver: data.driver ?? null,
+              transport: data.transport ?? null,
               VITE_API_BASE: import.meta.env.VITE_API_BASE ?? "(unset)",
-              topLevelError: data.error ?? null,
-              jsonRpcError:
-                data.body && typeof data.body === "object" && "error" in data.body ? data.body.error : null,
-              statusCode: data.status_code ?? null,
-              note:
-                "openfddApiUrl is your browser→OpenFDD request. gatewayUrlTheApiUses is where the API container sends JSON-RPC (OFDD_BACNET_SERVER_URL overrides ofdd:bacnetServerUrl in Docker).",
-              checkInNetworkTab: "GET /bacnet/gateways lists default gateway URLs the API will use.",
+              error: data.error ?? null,
             },
           );
         } else {
           stackStatusConsoleDebug("POST /bacnet/server_hello OK (BACnet strip green)", {
             url,
-            message: data.body?.result?.message ?? null,
+            driver: data.driver ?? null,
+            transport: data.transport ?? null,
+            bindInterface: data.interface ?? null,
+            port: data.port ?? null,
           });
         }
         return data;
