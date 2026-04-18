@@ -1,7 +1,7 @@
 {
   "name": "bacnet-driver",
   "version": "2.0.0",
-  "description": "BACnet data acquisition driver schema pack for the Poseidon engine. Covers wire-level runtime state: data_source (driver instance), protocol_network / bacnet_network, bacnet_device, and protocol_object / bacnet_object. BACnet object-type vocabulary lives in the Mnemosyne pack; protocol_object carries a concept_curie field referencing the matching mnemo:Bacnet* concept.",
+  "description": "BACnet data acquisition driver schema pack. Covers wire-level runtime state: data_source (driver instance), protocol_network / bacnet_network, bacnet_device, and protocol_object / bacnet_object. BACnet object-type vocabulary lives in the Mnemosyne pack; protocol_object carries a concept_curie field referencing the matching mnemo:Bacnet* concept.",
   "depends_on": ["common", "hvac-fdd"],
   "types": {
     "data_source": {

@@ -66,7 +66,9 @@ def test_upsert_site_creates_node_when_absent():
     assert captured["body"]["labels"] == [SITE_LABEL]
     props = captured["body"]["properties"]
     assert props[EXTERNAL_ID_PROP] == "11111111-1111-1111-1111-111111111111"
-    assert props["name"] == "HQ"
+    # Canonical kebab-lowercase for name; BAS-native label in display_name.
+    assert props["name"] == "hq"
+    assert props["display_name"] == "HQ"
     assert props["description"] == "Campus HQ"
     # metadata is JSON-serialized for Selene's flat property model
     assert json.loads(props["metadata_json"]) == {"climate_zone": "4A"}
@@ -117,7 +119,9 @@ def test_upsert_site_updates_existing_node_matched_by_external_id():
             },
         )
 
-    assert captured["body"]["set_properties"]["name"] == "HQ v2"
+    # Canonical for name, display_name carries the BAS label.
+    assert captured["body"]["set_properties"]["name"] == "hq-v2"
+    assert captured["body"]["set_properties"]["display_name"] == "HQ v2"
     # description should be removed (not present in new payload)
     assert "description" in captured["body"]["remove_properties"]
 
@@ -331,7 +335,8 @@ def test_upsert_equipment_serializes_full_row():
     assert captured["body"]["labels"] == [EQUIPMENT_LABEL]
     props = captured["body"]["properties"]
     assert props[EXTERNAL_ID_PROP] == "eq-uuid"
-    assert props["name"] == "AHU-1"
+    assert props["name"] == "ahu-1"  # canonical kebab
+    assert props["display_name"] == "AHU-1"  # BAS-native
     assert props["site_external_id"] == "site-uuid"
     assert props["description"] == "rooftop"
     assert props["equipment_type"] == "AHU"
@@ -363,7 +368,7 @@ def test_upsert_equipment_omits_optional_fields_when_absent():
             {
                 "id": "eq-uuid",
                 "site_id": "site-uuid",
-                "name": "Bare equipment",
+                "name": "Bare equipment",  # will canonicalise to "bare-equipment"
                 "description": None,
                 "equipment_type": None,
                 "metadata": None,
@@ -372,7 +377,14 @@ def test_upsert_equipment_omits_optional_fields_when_absent():
             },
         )
     props = captured["body"]["properties"]
-    assert set(props.keys()) == {EXTERNAL_ID_PROP, "name", "site_external_id"}
+    assert props["name"] == "bare-equipment"
+    assert props["display_name"] == "Bare equipment"
+    assert set(props.keys()) == {
+        EXTERNAL_ID_PROP,
+        "name",
+        "display_name",
+        "site_external_id",
+    }
 
 
 def test_upsert_equipment_removes_stale_properties_on_rename():
@@ -417,7 +429,8 @@ def test_upsert_equipment_removes_stale_properties_on_rename():
                 "fed_by_equipment_id": None,
             },
         )
-    assert captured["body"]["set_properties"]["name"] == "Renamed"
+    assert captured["body"]["set_properties"]["name"] == "renamed"
+    assert captured["body"]["set_properties"]["display_name"] == "Renamed"
     # equipment_type + description should both be scheduled for removal
     assert "equipment_type" in captured["body"]["remove_properties"]
     assert "description" in captured["body"]["remove_properties"]
@@ -524,6 +537,63 @@ def test_upsert_site_skips_metadata_when_none():
         upsert_site(client, {"id": "x", "name": "HQ", "metadata": None})
 
     assert "metadata_json" not in captured["body"]["properties"]
+
+
+def test_upsert_site_omits_display_name_when_raw_is_already_canonical():
+    """When the BAS label is already canonical, no redundant display_name is written."""
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(200, json={"nodes": [], "total": 0})
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(
+            201,
+            json={
+                "id": 1,
+                "labels": [SITE_LABEL],
+                "properties": captured["body"]["properties"],
+            },
+        )
+
+    with _mock_client(handler) as client:
+        upsert_site(client, {"id": "x", "name": "hq-north"})
+
+    props = captured["body"]["properties"]
+    assert props["name"] == "hq-north"
+    assert "display_name" not in props
+
+
+def test_upsert_site_removes_stale_display_name_when_new_name_is_canonical():
+    """Renaming from 'HQ North' to 'hq-north' should drop display_name from the node."""
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "nodes": [
+                        {
+                            "id": 3,
+                            "labels": [SITE_LABEL],
+                            "properties": {
+                                EXTERNAL_ID_PROP: "x",
+                                "name": "hq-north",
+                                "display_name": "HQ North",
+                            },
+                        }
+                    ],
+                    "total": 1,
+                },
+            )
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"id": 3, "labels": [SITE_LABEL]})
+
+    with _mock_client(handler) as client:
+        upsert_site(client, {"id": "x", "name": "hq-north"})
+
+    assert "display_name" in captured["body"]["remove_properties"]
 
 
 def test_upsert_enforces_external_id_invariant():

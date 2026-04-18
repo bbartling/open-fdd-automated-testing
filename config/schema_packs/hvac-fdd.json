@@ -1,7 +1,7 @@
 {
   "name": "hvac-fdd",
   "version": "2.0.0",
-  "description": "HVAC Fault Detection & Diagnostics operational-state schema pack for the Poseidon engine. Covers runtime state: detected faults, energy profiles, suppression groups, annotations, findings, proposals, and per-site config. Vocabulary (equipment kind, point kind) is delegated to the Mnemosyne pack; instance nodes use base :equipment / :point labels from the common pack with a concept_curie property referencing a mnemo:* CURIE.",
+  "description": "HVAC Fault Detection & Diagnostics operational-state schema pack. Covers runtime state: detected faults, energy profiles, suppression groups, annotations, findings, proposals, and per-site config. Vocabulary (equipment kind, point kind) is delegated to the Mnemosyne pack; instance nodes use base :equipment / :point labels from the common pack with a concept_curie property referencing a mnemo:* CURIE.",
   "depends_on": ["common"],
   "types": {
     "fault_rule": {
