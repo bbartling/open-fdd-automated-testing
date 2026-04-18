@@ -27,6 +27,7 @@ from openfdd_stack.platform.selene.exceptions import SeleneError
 logger = logging.getLogger(__name__)
 
 SITE_LABEL = "site"
+EQUIPMENT_LABEL = "equipment"
 EXTERNAL_ID_PROP = "external_id"
 
 
@@ -87,16 +88,92 @@ def _find_by_external_id(
     return matches[0]
 
 
-def _site_properties(row: dict[str, Any]) -> dict[str, Any]:
-    """Flatten a Postgres sites row to the Selene node property shape.
+def _upsert_by_external_id(
+    client: SeleneClient,
+    label: str,
+    external_id: str,
+    properties: dict[str, Any],
+    *,
+    op_name: str,
+) -> dict[str, Any] | None:
+    """Shared upsert primitive used by site/equipment/point sync helpers.
 
-    ``metadata`` is a JSON-able dict in Postgres; SeleneDB stores scalar
-    properties, so we serialize nested shapes as a JSON string (matching the
-    existing HTTP-API convention for nested JSON).
+    ``properties`` must already include ``external_id`` under
+    :data:`EXTERNAL_ID_PROP`. Stale keys (present on the existing node but not
+    in ``properties``) are removed so the graph doesn't accumulate stale fields
+    after a rename. On any Selene error, logs a warning with ``op_name`` +
+    ``external_id`` + full traceback and returns ``None`` \u2014 the caller has
+    already committed to Postgres.
     """
-    metadata = row.get("metadata") or {}
+    try:
+        existing = _find_by_external_id(client, label, external_id)
+        if existing is None:
+            return client.create_node([label], properties)
+        existing_props = set((existing.get("properties") or {}).keys())
+        incoming_props = set(properties.keys())
+        remove = sorted(existing_props - incoming_props)
+        return client.modify_node(
+            existing["id"],
+            set_properties=properties,
+            remove_properties=remove or None,
+        )
+    except SeleneError:
+        logger.warning(
+            "%s failed for %s=%s on :%s; Postgres write remains authoritative, "
+            "backfill can reconcile later.",
+            op_name,
+            EXTERNAL_ID_PROP,
+            external_id,
+            label,
+            exc_info=True,
+        )
+        return None
+
+
+def _delete_by_external_id(
+    client: SeleneClient, label: str, external_id: str, *, op_name: str
+) -> bool:
+    """Shared delete primitive. See :func:`_upsert_by_external_id`."""
+    try:
+        existing = _find_by_external_id(client, label, external_id)
+        if existing is None:
+            return False
+        client.delete_node(existing["id"])
+        return True
+    except SeleneError:
+        logger.warning(
+            "%s failed for %s=%s on :%s; Postgres deletion stands. Orphan "
+            "Selene node will need manual cleanup or backfill.",
+            op_name,
+            EXTERNAL_ID_PROP,
+            external_id,
+            label,
+            exc_info=True,
+        )
+        return False
+
+
+def _flatten_metadata(metadata: Any) -> str | None:
+    """Serialize a JSON-able metadata field to a string for Selene's flat property model."""
+    if metadata is None:
+        return None
+    if isinstance(metadata, str):
+        return metadata or None
     if isinstance(metadata, (dict, list)):
-        metadata = json.dumps(metadata)
+        if not metadata:
+            return None
+        return json.dumps(metadata)
+    return str(metadata)
+
+
+# ---------------------------------------------------------------------------
+# sites
+# ---------------------------------------------------------------------------
+
+
+def _site_properties(row: dict[str, Any]) -> dict[str, Any]:
+    """Flatten a Postgres sites row to the Selene node property shape."""
+    metadata = _flatten_metadata(row.get("metadata"))
     props: dict[str, Any] = {
         EXTERNAL_ID_PROP: str(row["id"]),
         "name": row.get("name") or "",
@@ -109,55 +186,79 @@ def _site_properties(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def upsert_site(client: SeleneClient, row: dict[str, Any]) -> dict[str, Any] | None:
-    """Upsert a ``:site`` node mirroring a Postgres sites row.
-
-    Returns the resulting node payload, or ``None`` when the sync was skipped
-    due to a Selene error. CRUD callers never surface the failure; it is
-    logged with enough context for a reconciliation job to redo it later.
-    """
+    """Upsert a ``:site`` node mirroring a Postgres sites row."""
     external_id = str(row["id"])
-    props = _site_properties(row)
-    try:
-        existing = _find_by_external_id(client, SITE_LABEL, external_id)
-        if existing is None:
-            return client.create_node([SITE_LABEL], props)
-        existing_props = set((existing.get("properties") or {}).keys())
-        incoming_props = set(props.keys())
-        remove = sorted(existing_props - incoming_props)
-        return client.modify_node(
-            existing["id"],
-            set_properties=props,
-            remove_properties=remove or None,
-        )
-    except SeleneError as exc:
-        logger.warning(
-            "selene upsert_site failed for %s (%s); Postgres write remains "
-            "authoritative. Backfill can reconcile later.",
-            external_id,
-            exc,
-        )
-        return None
+    return _upsert_by_external_id(
+        client,
+        SITE_LABEL,
+        external_id,
+        _site_properties(row),
+        op_name="selene upsert_site",
+    )
 
 
 def delete_site(client: SeleneClient, site_id: UUID | str) -> bool:
-    """Delete the ``:site`` node mirroring a Postgres sites row.
+    """Delete the ``:site`` node mirroring a Postgres sites row."""
+    return _delete_by_external_id(
+        client,
+        SITE_LABEL,
+        str(site_id),
+        op_name="selene delete_site",
+    )
 
-    Returns True when a node was deleted, False when none existed or the sync
-    could not complete. Does not raise; see the module docstring on failure
-    semantics.
+
+# ---------------------------------------------------------------------------
+# equipment
+# ---------------------------------------------------------------------------
+
+
+def _equipment_properties(row: dict[str, Any]) -> dict[str, Any]:
+    """Flatten a Postgres equipment row to the Selene node property shape.
+
+    ``site_id`` is persisted as a ``site_external_id`` property (pointing at
+    the parent site's ``external_id``). Phase 2.3d / later cleanup will promote
+    this to a proper ``(:site)-[:contains]->(:equipment)`` graph edge, but a
+    property keeps this slice focused on node-level parity.
     """
-    external_id = str(site_id)
-    try:
-        existing = _find_by_external_id(client, SITE_LABEL, external_id)
-        if existing is None:
-            return False
-        client.delete_node(existing["id"])
-        return True
-    except SeleneError as exc:
-        logger.warning(
-            "selene delete_site failed for %s (%s); Postgres deletion stands. "
-            "Orphan Selene node will need manual cleanup or backfill.",
-            external_id,
-            exc,
-        )
-        return False
+    metadata = _flatten_metadata(row.get("metadata"))
+    props: dict[str, Any] = {
+        EXTERNAL_ID_PROP: str(row["id"]),
+        "name": row.get("name") or "",
+    }
+    if row.get("site_id"):
+        props["site_external_id"] = str(row["site_id"])
+    if row.get("description"):
+        props["description"] = row["description"]
+    if row.get("equipment_type"):
+        props["equipment_type"] = row["equipment_type"]
+    if row.get("feeds_equipment_id"):
+        props["feeds_external_id"] = str(row["feeds_equipment_id"])
+    if row.get("fed_by_equipment_id"):
+        props["fed_by_external_id"] = str(row["fed_by_equipment_id"])
+    if metadata:
+        props["metadata_json"] = metadata
+    return props
+
+
+def upsert_equipment(
+    client: SeleneClient, row: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Upsert an ``:equipment`` node mirroring a Postgres equipment row."""
+    external_id = str(row["id"])
+    return _upsert_by_external_id(
+        client,
+        EQUIPMENT_LABEL,
+        external_id,
+        _equipment_properties(row),
+        op_name="selene upsert_equipment",
+    )
+
+
+def delete_equipment(client: SeleneClient, equipment_id: UUID | str) -> bool:
+    """Delete the ``:equipment`` node mirroring a Postgres equipment row."""
+    return _delete_by_external_id(
+        client,
+        EQUIPMENT_LABEL,
+        str(equipment_id),
+        op_name="selene delete_equipment",
+    )

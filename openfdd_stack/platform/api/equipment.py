@@ -1,4 +1,10 @@
-"""Equipment CRUD API."""
+"""Equipment CRUD API.
+
+Postgres is authoritative; when ``OFDD_STORAGE_BACKEND=selene`` a parallel
+``:equipment`` node is upserted/deleted in SeleneDB after every mutation. Same
+best-effort contract as the sites router \u2014 sync failures log with traceback
+and never fail the CRUD response.
+"""
 
 import json
 import logging
@@ -6,13 +12,64 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 
+from openfdd_stack.platform.config import get_platform_settings
 from openfdd_stack.platform.database import get_conn
 from openfdd_stack.platform.data_model_ttl import sync_ttl_to_file
-from openfdd_stack.platform.api.models import EquipmentCreate, EquipmentRead, EquipmentUpdate
+from openfdd_stack.platform.api.models import (
+    EquipmentCreate,
+    EquipmentRead,
+    EquipmentUpdate,
+)
 from openfdd_stack.platform.realtime import emit, TOPIC_CRUD_EQUIPMENT
 
 router = APIRouter(prefix="/equipment", tags=["equipment"])
 logger = logging.getLogger(__name__)
+
+
+def _selene_enabled() -> bool:
+    return getattr(get_platform_settings(), "storage_backend", "timescale") == "selene"
+
+
+def _selene_upsert_equipment(row: dict) -> None:
+    """Best-effort mirror of an equipment row into SeleneDB. Swallows all errors."""
+    if not _selene_enabled():
+        return
+    equipment_id = row.get("id")
+    try:
+        from openfdd_stack.platform.selene import (
+            make_selene_client_from_settings,
+            upsert_equipment,
+        )
+
+        with make_selene_client_from_settings() as client:
+            upsert_equipment(client, dict(row))
+    except Exception:  # noqa: BLE001 \u2014 CRUD must succeed regardless
+        logger.warning(
+            "selene equipment sync skipped for equipment_id=%s; Postgres "
+            "write remains authoritative.",
+            equipment_id,
+            exc_info=True,
+        )
+
+
+def _selene_delete_equipment(equipment_id: str) -> None:
+    if not _selene_enabled():
+        return
+    try:
+        from openfdd_stack.platform.selene import (
+            delete_equipment,
+            make_selene_client_from_settings,
+        )
+
+        with make_selene_client_from_settings() as client:
+            delete_equipment(client, equipment_id)
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "selene equipment delete sync skipped for equipment_id=%s; "
+            "Postgres deletion stands.",
+            equipment_id,
+            exc_info=True,
+        )
 
 
 def _deep_merge_dict(base: dict | None, overlay: dict | None) -> dict:
@@ -77,6 +134,7 @@ def create_equipment(body: EquipmentCreate):
         sync_ttl_to_file()
     except Exception:
         logger.warning("sync_ttl_to_file failed after equipment create", exc_info=True)
+    _selene_upsert_equipment(dict(row))
     emit(
         TOPIC_CRUD_EQUIPMENT + ".created",
         {"id": str(row["id"]), "site_id": str(row["site_id"]), "name": row["name"]},
@@ -175,6 +233,7 @@ def update_equipment(equipment_id: UUID, body: EquipmentUpdate):
         sync_ttl_to_file()
     except Exception:
         logger.warning("sync_ttl_to_file failed after equipment update", exc_info=True)
+    _selene_upsert_equipment(dict(row))
     emit(TOPIC_CRUD_EQUIPMENT + ".updated", {"id": str(equipment_id)})
     return EquipmentRead.model_validate(dict(row))
 
@@ -194,5 +253,6 @@ def delete_equipment(equipment_id: UUID):
         sync_ttl_to_file()
     except Exception:
         logger.warning("sync_ttl_to_file failed after equipment delete", exc_info=True)
+    _selene_delete_equipment(str(equipment_id))
     emit(TOPIC_CRUD_EQUIPMENT + ".deleted", {"id": str(equipment_id)})
     return {"status": "deleted"}
