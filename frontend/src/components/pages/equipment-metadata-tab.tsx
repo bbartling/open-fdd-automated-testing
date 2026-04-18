@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSiteContext } from "@/contexts/site-context";
@@ -160,21 +160,17 @@ export function EquipmentMetadataTab() {
   const equipment = selectedSiteId ? siteEquipment : allEquipment;
   const hasEquipment = equipment.length > 0;
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string>("");
+  const resolvedEquipmentId = useMemo(() => {
+    if (!equipment.length) return "";
+    if (selectedEquipmentId && equipment.some((e) => e.id === selectedEquipmentId)) {
+      return selectedEquipmentId;
+    }
+    return equipment[0].id;
+  }, [equipment, selectedEquipmentId]);
   const selectedEquipment = useMemo(() => {
     if (!equipment.length) return undefined;
-    return (
-      equipment.find((e) => e.id === selectedEquipmentId) ??
-      equipment[0]
-    );
-  }, [equipment, selectedEquipmentId]);
-
-  useEffect(() => {
-    if (!equipment.length) return;
-    const valid = equipment.some((e) => e.id === selectedEquipmentId);
-    if (!selectedEquipmentId || !valid) {
-      setSelectedEquipmentId(equipment[0].id);
-    }
-  }, [equipment, selectedEquipmentId]);
+    return equipment.find((e) => e.id === resolvedEquipmentId) ?? equipment[0];
+  }, [equipment, resolvedEquipmentId]);
 
   const [saveMsg, setSaveMsg] = useState<string>("");
 
@@ -215,7 +211,7 @@ export function EquipmentMetadataTab() {
           <select
             id="selected-equipment"
             className="h-9 w-full max-w-lg rounded-lg border border-border/60 bg-background px-3 text-sm"
-            value={selectedEquipment?.id ?? ""}
+            value={resolvedEquipmentId}
             onChange={(e) => setSelectedEquipmentId(e.target.value)}
           >
             {equipment.map((eq) => (

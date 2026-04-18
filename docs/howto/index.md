@@ -17,4 +17,5 @@ Minimal **`pip install open-fdd`** workflows (no Docker) live on the **[engine d
 - [Data model engineering (Brick + 223P MVP)](data_model_engineering) — Engineering UI, JSON round-trip, `s223`/`ofdd` RDF, SPARQL examples, and how that ties to FDD + DB for impact-style analytics.
 - [Cloning and porting](cloning_and_porting) — Same tools, any building; checklist for OpenClaw clones on a bench.
 - [OpenClaw subscription setup (Codex OAuth)](openclaw_subscription_setup) — ChatGPT subscription path vs API key; stale `openai/...` cleanup.
+- [OpenClaw, Docker BACnet, and human data modeling](openclaw_bacnet_docker_and_human_modeling) — Host-mode `bacnet-server`, **`http://openfdd_api:8000/bacnet/...`** vs raw :8080, two-layer tests, React export/import; complements [OpenClaw integration](../openclaw_integration) for MCP-indexed context.
 - [Monitor the fake fault schedule](fake_fault_schedule_monitoring) — Interpret 180°F spikes on the fake BACnet bench.

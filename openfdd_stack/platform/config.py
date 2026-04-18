@@ -1,10 +1,16 @@
 """Platform configuration.
 
-Runtime config can come from env (OFDD_*) or from the RDF graph (PUT /config).
-When the graph has config, it overrides env for those keys. Overlay is populated
-on API startup from data_model.ttl and on PUT /config.
+Runtime config is built from **Pydantic env** (``OFDD_*`` / ``stack/.env``) plus the **RDF overlay**
+(``data_model.ttl`` / PUT /config). The overlay is applied on top of env for graph-backed keys.
+
+**Exception:** ``OFDD_BACNET_SERVER_URL`` in the process environment, when set, **always wins** over
+``ofdd:bacnetServerUrl`` in the graph. The TTL often carries ``http://localhost:8080`` for local dev;
+that would break Docker (bridge → ``localhost`` is the container, not the host). The DIY gateway
+typically runs with ``network_mode: host`` — it is **not** on the same Docker bridge as ``api`` /
+``frontend``; reachability is **host routing / firewall**, not ordinary sibling-container DNS.
 """
 
+import os
 from typing import Optional
 
 try:
@@ -36,7 +42,8 @@ class PlatformSettings(BaseSettings):
         "config/data_model.ttl"  # unified graph: Brick + BACnet + config; auto-synced on CRUD
     )
     app_title: str = "Open-FDD API"
-    app_version: str = "2.0.5"
+    # Bump with root pyproject.toml [project].version and frontend/package.json "version".
+    app_version: str = "2.0.14"
     debug: bool = False
 
     # FDD loop
@@ -99,9 +106,7 @@ class PlatformSettings(BaseSettings):
 
 
 def get_platform_settings() -> PlatformSettings:
-    """Effective settings: env first, then overlay from RDF (PUT /config). Not cached so overlay is visible.
-    Overlay uses API keys (e.g. bacnet_enabled); we map to settings attrs (e.g. bacnet_scrape_enabled).
-    """
+    """Merge RDF overlay onto env-backed settings. ``OFDD_BACNET_SERVER_URL`` wins over graph when set."""
     s = PlatformSettings()
     overlay = get_config_overlay()
     key_to_attr = {
@@ -112,4 +117,7 @@ def get_platform_settings() -> PlatformSettings:
         attr = key_to_attr.get(k, k)
         if hasattr(s, attr):
             setattr(s, attr, v)
+    env_bacnet = (os.environ.get("OFDD_BACNET_SERVER_URL") or "").strip()
+    if env_bacnet:
+        s.bacnet_server_url = env_bacnet.rstrip("/")
     return s

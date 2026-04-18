@@ -21,6 +21,10 @@
 	handle /ws* {
 		reverse_proxy api:8000
 	}
+	# Open-FDD BACnet proxy (same paths as uvicorn). Catches /bacnet/* if the SPA was built without /api prefix.
+	handle /bacnet* {
+		reverse_proxy api:8000
+	}
 	handle /* {
 		reverse_proxy frontend:5173
 	}

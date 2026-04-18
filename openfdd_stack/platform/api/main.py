@@ -38,6 +38,17 @@ from openfdd_stack.platform.api.schemas import CapabilityResponse, ErrorResponse
 from openfdd_stack.platform.realtime.ws import router as ws_router
 
 settings = get_platform_settings()
+
+
+def _version_tuple(ver: str) -> tuple[int, ...]:
+    """Loose semver tuple for comparing stack release strings (digits only per segment)."""
+    parts: list[int] = []
+    for segment in ver.strip().split("."):
+        digits = "".join(c for c in segment if c.isdigit())
+        if not digits:
+            break
+        parts.append(int(digits))
+    return tuple(parts)
 _enable_docs = bool(getattr(settings, "enable_openapi_docs", False))
 _docs_url = "/docs" if _enable_docs else None
 _redoc_url = "/redoc" if _enable_docs else None
@@ -73,11 +84,21 @@ async def lifespan(app: FastAPI):
 
 
 def _app_version() -> str:
-    """Open-FDD version from installed package; updates with pip install."""
+    """Stack release for OpenAPI / GET /capabilities.version (sync with pyproject + config app_version).
+
+    Uses installed ``openfdd-afdd-stack`` when it is >= ``PlatformSettings.app_version`` (so a fresh
+    ``pip install .`` can win); otherwise falls back to ``app_version`` so a stale global editable
+    (e.g. 0.1.0) does not override the repo's declared release. ``OFDD_APP_VERSION`` overrides via
+    Pydantic on ``settings.app_version``.
+    """
+    code = settings.app_version
     try:
-        return importlib.metadata.version("open-fdd")
+        meta = importlib.metadata.version("openfdd-afdd-stack")
+        if _version_tuple(meta) >= _version_tuple(code):
+            return meta
     except importlib.metadata.PackageNotFoundError:
-        return getattr(settings, "app_version", "0.1.0")
+        pass
+    return code
 
 
 app = FastAPI(

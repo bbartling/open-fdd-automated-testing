@@ -59,6 +59,7 @@ The BACnet scraper loads points from the DB where `bacnet_device_id` and `object
 
 Scraper config comes from **environment** and, when the API uses Bearer auth, from **GET /config** (the React Config page controls the interval).
 
-- **`OFDD_BACNET_SERVER_URL`** — diy-bacnet-server base URL (e.g. http://localhost:8080). Required for RPC.
+- **`OFDD_BACNET_ADDRESS`** — BACnet/IP **UDP** bind passed into **diy-bacnet-server** / **bacpypes3** (format like `192.168.1.10/24:47808`: IPv4 prefix, UDP port). This is **only** how the stack listens for BACnet traffic on the OT (or lab) interface. It is **not** the URL the Open-FDD **API** or **bacnet-scraper** use for HTTP JSON-RPC.
+- **`OFDD_BACNET_SERVER_URL`** — Base URL for **HTTP** JSON-RPC to diy-bacnet-server (**port 8080** on the **Docker host** when using the bundled `bacnet-server` with `network_mode: host`). From bridge containers this is normally **`http://host.docker.internal:8080`** (see `stack/docker-compose.yml`). Use a host LAN URL only when hairpin/routing requires it. Host-run tools may use `http://127.0.0.1:8080` instead.
 - **Scrape interval** — When **`OFDD_API_KEY`** is set (e.g. in `stack/.env`), the scraper calls GET /config and uses **`bacnet_scrape_interval_min`** from the data model (Config page). Otherwise it uses **`OFDD_BACNET_SCRAPE_INTERVAL_MIN`** env (default: 5). See [Configuration → Services that read config from the API](../configuration#services-that-read-config-from-the-api-bacnet-scraper).
 - **`OFDD_DB_*`** — TimescaleDB connection

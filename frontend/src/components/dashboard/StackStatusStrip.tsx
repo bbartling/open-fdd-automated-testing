@@ -1,5 +1,7 @@
+import { useEffect, useRef } from "react";
 import { useHealth } from "@/hooks/use-fdd-status";
 import { useBacnetStatus } from "@/hooks/use-bacnet-status";
+import { stackStatusConsoleWarn } from "@/lib/stack-status-console";
 import { cn } from "@/lib/utils";
 
 type Status = "green" | "yellow" | "red" | "gray";
@@ -45,6 +47,59 @@ export function StackStatusStrip() {
       : "green";
   const mqttStatus: Status =
     !mqtt ? "gray" : mqtt.enabled && mqtt.connected ? "green" : mqtt.enabled ? "yellow" : "gray";
+
+  const stripDegradedSig = useRef("");
+  useEffect(() => {
+    if (healthLoading || bacnetLoading) return;
+    if (apiStatus !== "red" && bacnetStatus !== "red") {
+      stripDegradedSig.current = "";
+      return;
+    }
+    const sig = [
+      apiStatus,
+      bacnetStatus,
+      mqttStatus,
+      healthError,
+      bacnetError,
+      health?.status ?? "",
+      bacnet?.ok === true ? "1" : bacnet?.ok === false ? "0" : "",
+      bacnet?.error ?? "",
+      bacnet?.status_code ?? "",
+      JSON.stringify(bacnet?.body?.error ?? null),
+    ].join("|");
+    if (sig === stripDegradedSig.current) return;
+    stripDegradedSig.current = sig;
+    stackStatusConsoleWarn(
+      "Stack strip degraded — useHealth / useBacnetStatus also emit [OpenFDD Stack] lines for each request",
+      {
+        apiStatus,
+        bacnetStatus,
+        mqttStatus,
+        healthError,
+        bacnetError,
+        health: health ?? null,
+        bacnetSummary: bacnet
+          ? {
+              ok: bacnet.ok,
+              status_code: bacnet.status_code,
+              error: bacnet.error,
+              jsonrpc_error: bacnet.body?.error ?? null,
+            }
+          : null,
+        VITE_API_BASE: import.meta.env.VITE_API_BASE ?? "(unset)",
+      },
+    );
+  }, [
+    apiStatus,
+    bacnetStatus,
+    mqttStatus,
+    healthLoading,
+    bacnetLoading,
+    healthError,
+    bacnetError,
+    health,
+    bacnet,
+  ]);
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-muted/20 px-6 py-2 text-sm">

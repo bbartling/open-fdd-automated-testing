@@ -30,11 +30,13 @@ Open-FDD is an open-source **edge analytics platform for smart buildings** that 
 
 On another host, replace `localhost` with the server IP (e.g. `http://192.168.204.16:8000`). For bootstrap options run `./scripts/bootstrap.sh --help`.
 
-**Check BACnet and MQTT bridge status** (when bridge enabled, `result.mqtt_bridge` is present):
+**Check BACnet and MQTT bridge status** (when bridge enabled, `result.mqtt_bridge` is present). The API proxy expects JSON-RPC shape; add **`-H "Authorization: Bearer $OFDD_API_KEY"`** when `OFDD_API_KEY` is set.
 
 ```bash
-curl -s -X POST http://localhost:8000/bacnet/server_hello -H "Content-Type: application/json" -d '{}'
-# Or direct to gateway: curl -s -X POST http://localhost:8080/server_hello -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":"0","method":"server_hello","params":{}}'
+curl -sS -X POST http://localhost:8000/bacnet/server_hello -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":"0","method":"server_hello","params":{}}'
+# Direct to gateway on the host (not from inside arbitrary containers): same JSON body to http://localhost:8080/server_hello
+# Same hop verify uses: ./scripts/smoke_bacnet_api_to_gateway.sh
 ```
 
 ---

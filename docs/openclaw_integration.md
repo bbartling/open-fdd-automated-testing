@@ -64,6 +64,18 @@ This sidecar provides retrieval-focused tools over derived index artifacts from 
 
 ---
 
+## 1c2) DIY BACnet + OpenClaw (host-mode gateway; do not assume `openfdd_bacnet_server:8080`)
+
+**`bacnet-server`** in this stack uses **`network_mode: host`**: HTTP **:8080** is on the **Docker host**, not on the Compose bridge. Other containers (including OpenClaw after `docker network connect`) generally reach it the same way **`openfdd_api`** does—via **`http://host.docker.internal:8080`** (with `extra_hosts: host.docker.internal:host-gateway`) and **`OFDD_BACNET_SERVER_URL`** (Compose/bootstrap default that URL; use a **host LAN** URL in `stack/.env` only when routing/hairpin requires it, or after `./scripts/bootstrap.sh --verify --autofix-bacnet`)—**not** via the hostname `openfdd_bacnet_server` on port 8080. **`localhost:8080` inside a container** is the container’s own loopback (usually **connection refused**). **`openfdd_api:8080`** is wrong because the API listens on **:8000**.
+
+**Practical OpenClaw path:** call **`http://openfdd_api:8000/bacnet/...`** with the API key; avoid raw :8080 unless you mirror the stack’s `extra_hosts` and URL rules.
+
+**Operator smoke (Docker host):** `./scripts/smoke_bacnet_api_to_gateway.sh` — proves **`openfdd_api` → `OFDD_BACNET_SERVER_URL`** with the same URL candidates as production (matches **`./scripts/bootstrap.sh --verify`** BACnet line).
+
+For the full checklist, two-layer tests, **“first five”** agent curls, and the **React** export → tag → import flow, see **[OpenClaw, Docker BACnet, and human data modeling](howto/openclaw_bacnet_docker_and_human_modeling)**.
+
+---
+
 ## 1d) Mode-aware orchestration with bootstrap
 
 OpenClaw can orchestrate partial deployments through bootstrap modes:

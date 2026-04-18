@@ -39,6 +39,7 @@ Same tools, any building: repo stores reusable process, while site-specific trut
 **Product and operations (published docs paths):**
 
 6. [OpenClaw integration](../openclaw_integration)
+6b. [OpenClaw, Docker BACnet, and human data modeling](../howto/openclaw_bacnet_docker_and_human_modeling) — host-mode BACnet, `openfdd_api:8000` /bacnet proxy, UI export/import for tagging
 7. [Open-FDD integrity sweep](openfdd_integrity_sweep)
 8. [Operator framework](operator_framework)
 9. [AI PR review playbook](../appendix/ai_pr_review_playbook)

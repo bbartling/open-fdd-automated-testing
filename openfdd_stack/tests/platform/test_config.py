@@ -79,13 +79,14 @@ def test_default_platform_config_values():
     assert DEFAULT_PLATFORM_CONFIG["open_meteo_timezone"] == "America/Chicago"
 
 
-def test_get_config_returns_default_when_graph_empty():
-    """When overlay and graph have no config, GET /config behavior returns DEFAULT_PLATFORM_CONFIG from code."""
+def test_get_config_returns_default_when_graph_empty(monkeypatch):
+    """When overlay and graph have no config, GET /config returns defaults (env must not skew equality)."""
     from unittest.mock import patch
 
     from openfdd_stack.platform.api.config import get_config
     from openfdd_stack.platform.default_config import DEFAULT_PLATFORM_CONFIG
 
+    monkeypatch.delenv("OFDD_BACNET_SERVER_URL", raising=False)
     set_config_overlay({})
     with patch("openfdd_stack.platform.api.config.get_config_from_graph", return_value={}):
         result = get_config()
@@ -107,8 +108,9 @@ def test_platform_settings_defaults():
     assert s.open_meteo_site_id == "default"
 
 
-def test_platform_settings_overlay():
-    """Overlay overrides env for runtime config."""
+def test_platform_settings_overlay(monkeypatch):
+    """Overlay overrides env for runtime config; OFDD_BACNET_SERVER_URL beats graph bacnet_server_url."""
+    monkeypatch.delenv("OFDD_BACNET_SERVER_URL", raising=False)
     set_config_overlay({})
     s = get_platform_settings()
     assert s.rule_interval_hours == 3.0
@@ -118,4 +120,11 @@ def test_platform_settings_overlay():
     s2 = get_platform_settings()
     assert s2.rule_interval_hours == 0.1
     assert s2.bacnet_server_url == "http://localhost:8080"
+
+    monkeypatch.setenv("OFDD_BACNET_SERVER_URL", "http://192.168.1.50:8080")
+    s3 = get_platform_settings()
+    assert s3.rule_interval_hours == 0.1
+    assert s3.bacnet_server_url == "http://192.168.1.50:8080"
+
     set_config_overlay({})
+    monkeypatch.delenv("OFDD_BACNET_SERVER_URL", raising=False)

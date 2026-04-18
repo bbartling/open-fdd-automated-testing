@@ -139,7 +139,8 @@ For edge deployments with limited disk, set these at bootstrap (or in `stack/.en
 | `OFDD_DB_NAME` | Database name |
 | `OFDD_DB_USER` | Database user |
 | `OFDD_DB_PASSWORD` | Database password |
-| `OFDD_BACNET_SERVER_URL` | diy-bacnet-server base URL (e.g. http://localhost:8080) |
+| `OFDD_BACNET_ADDRESS` | Optional. BACnet/IP **UDP** bind for bacpypes3 (e.g. `192.168.1.10/24:47808`). Set via `./scripts/bootstrap.sh --bacnet-address …`. Not the HTTP gateway URL. |
+| `OFDD_BACNET_SERVER_URL` | diy-bacnet-server **HTTP** base URL (default from Compose: `http://host.docker.internal:8080` for API/scraper → host-mode gateway). |
 | `OFDD_BACNET_SITE_ID` | Site to tag when scraping (default: default; use on remote gateways) |
 | `OFDD_BACNET_GATEWAYS` | JSON array of {url, site_id} for central aggregator |
 | `OFDD_RULES_DIR` | Rules directory (default: stack/rules) |
