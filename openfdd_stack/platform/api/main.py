@@ -34,7 +34,11 @@ from openfdd_stack.platform.api import (
     timeseries as timeseries_router,
 )
 from openfdd_stack.platform.api.auth import APIKeyMiddleware
-from openfdd_stack.platform.api.schemas import CapabilityResponse, ErrorResponse, ErrorDetail
+from openfdd_stack.platform.api.schemas import (
+    CapabilityResponse,
+    ErrorResponse,
+    ErrorDetail,
+)
 from openfdd_stack.platform.realtime.ws import router as ws_router
 
 settings = get_platform_settings()
@@ -49,6 +53,8 @@ def _version_tuple(ver: str) -> tuple[int, ...]:
             break
         parts.append(int(digits))
     return tuple(parts)
+
+
 _enable_docs = bool(getattr(settings, "enable_openapi_docs", False))
 _docs_url = "/docs" if _enable_docs else None
 _redoc_url = "/redoc" if _enable_docs else None
@@ -62,7 +68,13 @@ _api_description = (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load in-memory graph from data_model.ttl and start background sync thread."""
+    """Load in-memory graph from data_model.ttl and start background sync thread.
+
+    When ``OFDD_STORAGE_BACKEND=selene``, also registers pinned schema packs
+    against the configured SeleneDB instance. Registration failures are logged
+    (warning) but do not block boot — the strangler flag keeps the timescale
+    code paths available, so partial Selene availability is survivable.
+    """
     from openfdd_stack.platform.config import set_config_overlay
     from openfdd_stack.platform.graph_model import (
         get_config_from_graph,
@@ -77,10 +89,49 @@ async def lifespan(app: FastAPI):
     )  # so get_platform_settings() sees RDF config
     write_ttl_to_file()  # ensure file exists and health state is set
     start_sync_thread()
+
+    if getattr(settings, "storage_backend", "timescale") == "selene":
+        _register_selene_packs_on_boot()
+
     yield
     from openfdd_stack.platform.graph_model import stop_sync_thread
 
     stop_sync_thread()
+
+
+def _register_selene_packs_on_boot() -> None:
+    """Best-effort schema pack registration when backend is selene."""
+    import logging
+    from pathlib import Path
+
+    from openfdd_stack.platform.selene import SeleneClient, SeleneError
+    from openfdd_stack.platform.selene.schema_pack import (
+        PackLoadError,
+        register_packs_from_dir,
+    )
+
+    log = logging.getLogger(__name__)
+    pack_dir = Path(settings.selene_schema_pack_dir)
+    if not pack_dir.is_absolute():
+        pack_dir = Path.cwd() / pack_dir
+    order = [s.strip() for s in settings.selene_pack_order.split(",") if s.strip()]
+
+    try:
+        with SeleneClient(
+            settings.selene_url,
+            identity=settings.selene_identity,
+            secret=settings.selene_secret,
+            timeout_sec=settings.selene_timeout_sec,
+        ) as client:
+            results = register_packs_from_dir(client, pack_dir, order=order)
+            for pack, counts in results.items():
+                log.info("selene pack %s registered: %s", pack, counts)
+    except (SeleneError, PackLoadError, OSError) as exc:
+        log.warning(
+            "selene pack registration skipped on boot (%s). "
+            "Stack continues with strangler fallback; re-run after selene is reachable.",
+            exc,
+        )
 
 
 def _app_version() -> str:

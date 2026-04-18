@@ -1,0 +1,112 @@
+{
+  "name": "bacnet-driver",
+  "version": "2.0.0",
+  "description": "BACnet data acquisition driver schema pack for the Poseidon engine. Covers wire-level runtime state: data_source (driver instance), protocol_network / bacnet_network, bacnet_device, and protocol_object / bacnet_object. BACnet object-type vocabulary lives in the Mnemosyne pack; protocol_object carries a concept_curie field referencing the matching mnemo:Bacnet* concept.",
+  "depends_on": ["common", "hvac-fdd"],
+  "types": {
+    "data_source": {
+      "description": "A protocol driver instance that acquires point data",
+      "fields": {
+        "name": "string!",
+        "protocol": "string!",
+        "enabled": "bool = true",
+        "poll_interval_s": "int = 60",
+        "cov_enabled": "bool = false",
+        "status": "string = 'disconnected'",
+        "last_sync": "string",
+        "error_count": "int = 0",
+        "points_acquired": "int = 0"
+      }
+    },
+    "protocol_network": {
+      "description": "A network segment that a driver communicates over",
+      "fields": {
+        "name": "string!",
+        "network_type": "string!",
+        "address": "string"
+      }
+    },
+    "bacnet_network": {
+      "description": "BACnet/IP or MS/TP network segment",
+      "parent": "protocol_network",
+      "fields": {
+        "network_number": "int",
+        "broadcast_address": "string",
+        "port": "int = 47808",
+        "transport": "string = 'bip'"
+      }
+    },
+    "bacnet_device": {
+      "description": "A discovered or configured BACnet device",
+      "fields": {
+        "name": "string!",
+        "instance": "int!",
+        "address": "string!",
+        "port": "int = 47808",
+        "mac_address": "string",
+        "max_apdu": "int = 1476",
+        "segmentation": "string = 'both'",
+        "vendor_id": "int",
+        "vendor_name": "string",
+        "model_name": "string",
+        "firmware_rev": "string",
+        "status": "string = 'unknown'",
+        "last_seen": "string",
+        "cov_supported": "bool = false",
+        "error_count": "int = 0"
+      }
+    },
+    "protocol_object": {
+      "description": "A generic protocol-layer object exposed by a device. concept_curie references a mnemo:* protocol concept. Parent type for bacnet_object and future modbus_register / mqtt_topic / opc_node specializations.",
+      "fields": {
+        "concept_curie": "string!",
+        "instance": "int",
+        "object_name": "string",
+        "description": "string",
+        "units": "string"
+      }
+    },
+    "bacnet_object": {
+      "description": "A BACnet object on a device. concept_curie is one of mnemo:BacnetAnalogInput, mnemo:BacnetBinaryOutput, etc. (65 standard object types)",
+      "parent": "protocol_object",
+      "fields": {
+        "object_type": "string!",
+        "present_value_type": "string = 'real'",
+        "cov_increment": "float",
+        "reliability": "string",
+        "out_of_service": "bool = false"
+      }
+    }
+  },
+  "relationships": {
+    "hasNetwork": {
+      "description": "Data source communicates over a network",
+      "source": ["data_source"],
+      "target": ["protocol_network"]
+    },
+    "hasDevice": {
+      "description": "Network contains a discovered or configured device",
+      "source": ["protocol_network"],
+      "target": ["bacnet_device"]
+    },
+    "exposesObject": {
+      "description": "Device exposes a protocol object",
+      "source": ["bacnet_device"],
+      "target": ["protocol_object"]
+    },
+    "protocolBinding": {
+      "description": "Links a protocol-layer object to an application-layer point",
+      "source": ["protocol_object"],
+      "target": ["point"],
+      "fields": {
+        "bound_at": "string",
+        "property": "string = 'present_value'"
+      }
+    },
+    "acquiredBy": {
+      "description": "Equipment's points are acquired by a data source",
+      "source": ["equipment"],
+      "target": ["data_source"]
+    }
+  }
+}
