@@ -1,17 +1,73 @@
-"""Points CRUD API — data model for timeseries references."""
+"""Points CRUD API \u2014 data model for timeseries references.
 
+Postgres is authoritative; when ``OFDD_STORAGE_BACKEND=selene`` a parallel
+``:point`` node is upserted/deleted in SeleneDB after every mutation. Same
+best-effort contract as the sites and equipment routers \u2014 sync failures log
+with traceback and never fail the CRUD response.
+"""
+
+import logging
 from uuid import UUID
 
 import psycopg2
 from fastapi import APIRouter, HTTPException, Query
 from psycopg2.extras import Json
 
+from openfdd_stack.platform.config import get_platform_settings
 from openfdd_stack.platform.database import get_conn
 from openfdd_stack.platform.data_model_ttl import sync_ttl_to_file
 from openfdd_stack.platform.api.models import PointCreate, PointRead, PointUpdate
 from openfdd_stack.platform.realtime import emit, TOPIC_CRUD_POINT
 
 router = APIRouter(prefix="/points", tags=["points"])
+logger = logging.getLogger(__name__)
+
+
+def _selene_enabled() -> bool:
+    return getattr(get_platform_settings(), "storage_backend", "timescale") == "selene"
+
+
+def _selene_upsert_point(row: dict) -> None:
+    """Best-effort mirror of a points row into SeleneDB. Swallows all errors."""
+    if not _selene_enabled():
+        return
+    point_id = row.get("id")
+    try:
+        from openfdd_stack.platform.selene import (
+            make_selene_client_from_settings,
+            upsert_point,
+        )
+
+        with make_selene_client_from_settings() as client:
+            upsert_point(client, dict(row))
+    except Exception:  # noqa: BLE001 \u2014 CRUD must succeed regardless
+        logger.warning(
+            "selene point sync skipped for point_id=%s; Postgres write "
+            "remains authoritative.",
+            point_id,
+            exc_info=True,
+        )
+
+
+def _selene_delete_point(point_id: str) -> None:
+    if not _selene_enabled():
+        return
+    try:
+        from openfdd_stack.platform.selene import (
+            delete_point,
+            make_selene_client_from_settings,
+        )
+
+        with make_selene_client_from_settings() as client:
+            delete_point(client, point_id)
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "selene point delete sync skipped for point_id=%s; Postgres "
+            "deletion stands.",
+            point_id,
+            exc_info=True,
+        )
+
 
 _COLS = (
     "id, site_id, external_id, brick_type, fdd_input, unit, description, equipment_id, "
@@ -100,7 +156,8 @@ def create_point(body: PointCreate):
     try:
         sync_ttl_to_file()
     except Exception:
-        pass
+        logger.warning("sync_ttl_to_file failed after point create", exc_info=True)
+    _selene_upsert_point(dict(row))
     emit(
         TOPIC_CRUD_POINT + ".created",
         {
@@ -182,7 +239,8 @@ def update_point(point_id: UUID, body: PointUpdate):
     try:
         sync_ttl_to_file()
     except Exception:
-        pass
+        logger.warning("sync_ttl_to_file failed after point update", exc_info=True)
+    _selene_upsert_point(dict(row))
     emit(TOPIC_CRUD_POINT + ".updated", {"id": str(point_id)})
     return PointRead.model_validate(dict(row))
 
@@ -201,6 +259,7 @@ def delete_point(point_id: UUID):
     try:
         sync_ttl_to_file()
     except Exception:
-        pass
+        logger.warning("sync_ttl_to_file failed after point delete", exc_info=True)
+    _selene_delete_point(str(point_id))
     emit(TOPIC_CRUD_POINT + ".deleted", {"id": str(point_id)})
     return {"status": "deleted"}

@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 SITE_LABEL = "site"
 EQUIPMENT_LABEL = "equipment"
+POINT_LABEL = "point"
 EXTERNAL_ID_PROP = "external_id"
 
 
@@ -295,4 +296,81 @@ def delete_equipment(client: SeleneClient, equipment_id: UUID | str) -> bool:
         EQUIPMENT_LABEL,
         str(equipment_id),
         op_name="selene delete_equipment",
+    )
+
+
+# ---------------------------------------------------------------------------
+# points
+# ---------------------------------------------------------------------------
+
+
+def _point_properties(row: dict[str, Any]) -> dict[str, Any]:
+    """Flatten a Postgres points row to the Selene node property shape.
+
+    Note the two-``external_id`` naming conflict: the Postgres ``points.id``
+    (UUID primary key) becomes the Selene ``external_id`` keying property
+    (consistent with sites/equipment). The Postgres ``points.external_id``
+    column carries the BAS-native point handle (``"AHU_SA_Temp"``), which
+    becomes the Selene ``name`` (canonicalised) + ``display_name`` pair.
+
+    ``concept_curie`` is intentionally not populated here \u2014 Decision D5
+    defers Mnemosyne resolution to Phase 2.2 when the brick_ttl_resolver
+    rewrite lands. ``brick_type`` persists as a property so downstream
+    consumers (the FDD loop, the /data-model export) stay aligned until
+    that resolution path comes online.
+    """
+    modbus = _flatten_metadata(row.get("modbus_config"))
+    canonical, display = _canonical_name_pair(row.get("external_id"))
+    props: dict[str, Any] = {
+        EXTERNAL_ID_PROP: str(row["id"]),
+        "name": canonical,
+    }
+    if display:
+        props["display_name"] = display
+    if row.get("site_id"):
+        props["site_external_id"] = str(row["site_id"])
+    if row.get("equipment_id"):
+        props["equipment_external_id"] = str(row["equipment_id"])
+    if row.get("brick_type"):
+        props["brick_type"] = row["brick_type"]
+    if row.get("fdd_input"):
+        props["fdd_input"] = row["fdd_input"]
+    if row.get("unit"):
+        props["unit"] = row["unit"]
+    if row.get("description"):
+        props["description"] = row["description"]
+    if row.get("object_identifier"):
+        props["object_identifier"] = row["object_identifier"]
+    if row.get("object_name"):
+        props["object_name"] = row["object_name"]
+    if row.get("bacnet_device_id"):
+        props["bacnet_device_id"] = row["bacnet_device_id"]
+    # polling is a bool with a True default; write it unconditionally so the
+    # node reflects the current value rather than inheriting an old one on rename.
+    if "polling" in row and row["polling"] is not None:
+        props["polling"] = bool(row["polling"])
+    if modbus:
+        props["modbus_config_json"] = modbus
+    return props
+
+
+def upsert_point(client: SeleneClient, row: dict[str, Any]) -> dict[str, Any] | None:
+    """Upsert a ``:point`` node mirroring a Postgres points row."""
+    external_id = str(row["id"])
+    return _upsert_by_external_id(
+        client,
+        POINT_LABEL,
+        external_id,
+        _point_properties(row),
+        op_name="selene upsert_point",
+    )
+
+
+def delete_point(client: SeleneClient, point_id: UUID | str) -> bool:
+    """Delete the ``:point`` node mirroring a Postgres points row."""
+    return _delete_by_external_id(
+        client,
+        POINT_LABEL,
+        str(point_id),
+        op_name="selene delete_point",
     )
