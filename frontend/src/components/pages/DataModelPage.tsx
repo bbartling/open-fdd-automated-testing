@@ -1,5 +1,4 @@
 import { useState, useCallback, useMemo, useRef } from "react";
-import { Link, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ListOrdered, Database, Upload, Server, Save, RotateCcw, Search, Trash2, Download, FileText, FileUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,7 +35,6 @@ function downloadJson(data: unknown, filename: string) {
 
 export function DataModelPage() {
   const queryClient = useQueryClient();
-  const location = useLocation();
   const { selectedSiteId } = useSiteContext();
   const [importJson, setImportJson] = useState("");
   const [importResult, setImportResult] = useState<DataModelImportResponse | null>(null);
@@ -178,26 +176,15 @@ export function DataModelPage() {
       <h1 className="mb-6 text-2xl font-semibold tracking-tight">Data Model BRICK</h1>
       <p className="mb-6 text-sm text-muted-foreground">
         Build your Brick + BACnet data model from here: export JSON for AI tagging, import tagged points, browse equipment, and
-        run SPARQL. On{" "}
-        <Link
-          to={{ pathname: "/bacnet-tools", search: location.search }}
-          className="font-medium text-primary underline-offset-4 hover:underline"
-        >
-          BACnet tools
-        </Link>
-        , create a <strong>site</strong> (Step 1) and run <strong>discovery</strong> (Step 2) before you rely on export/import.
+        run SPARQL. Populate the graph via the BACnet API (<code>POST /bacnet/whois_range</code>,
+        <code>POST /bacnet/point_discovery_to_graph</code>) before you rely on export/import.
       </p>
 
       {sites.length === 0 && (
         <p className="mb-6 text-sm text-muted-foreground" data-testid="data-model-no-sites-banner">
-          No sites in the model yet. Create one on{" "}
-          <Link
-            to={{ pathname: "/bacnet-tools", search: location.search }}
-            className="font-medium text-primary underline-offset-4 hover:underline"
-          >
-            BACnet tools
-          </Link>{" "}
-          under <strong>Step 1 — Sites</strong>, then use <strong>Step 2 — BACnet discovery</strong> to add devices to the graph.
+          No sites in the model yet. Create one via the Sites CRUD API, then use the BACnet API
+          (<code>/bacnet/whois_range</code> + <code>/bacnet/point_discovery_to_graph</code>) to populate devices and points
+          into the graph.
         </p>
       )}
 
@@ -215,16 +202,10 @@ export function DataModelPage() {
         <CardContent className="space-y-4">
           <ol className="list-decimal space-y-3 pl-5 text-sm">
             <li>
-              <strong>Sites + BACnet discovery</strong> — On{" "}
-              <Link
-                to={{ pathname: "/bacnet-tools", search: location.search }}
-                className="font-medium text-primary underline-offset-4 hover:underline"
-              >
-                BACnet tools
-              </Link>
-              : <strong>Step 1 — Sites</strong> (create a site if needed), then <strong>Step 2 — BACnet discovery</strong> (Who-Is,
-              point discovery, <strong>Add to data model</strong>). Optional read/write tools on that page are not required for
-              this flow.
+              <strong>Sites + BACnet discovery</strong> — Create a site via the Sites CRUD API if needed, then run Who-Is + point
+              discovery against the rusty-bacnet driver: <code>POST /bacnet/whois_range</code> to list devices, and
+              <code>POST /bacnet/point_discovery_to_graph</code> to enumerate each device's objects and persist them as
+              <code>:bacnet_device</code> / <code>:bacnet_object</code> nodes in SeleneDB.
             </li>
             <li>
               <strong>Export JSON and open your LLM</strong> — Download the export (Export section), then open your LLM chat. Pull prompt/context from{" "}

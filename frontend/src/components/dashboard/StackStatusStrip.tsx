@@ -38,15 +38,17 @@ export function StackStatusStrip() {
   const { data: bacnet, isError: bacnetError, isLoading: bacnetLoading } = useBacnetStatus();
 
   const apiStatus: Status = healthLoading ? "gray" : healthError || health?.status !== "ok" ? "red" : "green";
-  const result = bacnet?.body?.result;
-  const mqtt = result?.mqtt_bridge;
+  // Post-2.5d: BACnet driver is embedded (rusty-bacnet). ``ok`` is
+  // derived from a driver config echo, not from gateway reachability —
+  // so a red dot means the API itself can't answer, not that the BAS
+  // is unreachable. The MQTT bridge status dot was retired with
+  // diy-bacnet-server in Phase 2.5d; Modbus / MQTT integrations come
+  // back as first-class drivers when they're needed.
   const bacnetStatus: Status = bacnetLoading
     ? "gray"
     : bacnetError || !bacnet?.ok
       ? "red"
       : "green";
-  const mqttStatus: Status =
-    !mqtt ? "gray" : mqtt.enabled && mqtt.connected ? "green" : mqtt.enabled ? "yellow" : "gray";
 
   const stripDegradedSig = useRef("");
   useEffect(() => {
@@ -58,14 +60,11 @@ export function StackStatusStrip() {
     const sig = [
       apiStatus,
       bacnetStatus,
-      mqttStatus,
       healthError,
       bacnetError,
       health?.status ?? "",
       bacnet?.ok === true ? "1" : bacnet?.ok === false ? "0" : "",
       bacnet?.error ?? "",
-      bacnet?.status_code ?? "",
-      JSON.stringify(bacnet?.body?.error ?? null),
     ].join("|");
     if (sig === stripDegradedSig.current) return;
     stripDegradedSig.current = sig;
@@ -74,16 +73,17 @@ export function StackStatusStrip() {
       {
         apiStatus,
         bacnetStatus,
-        mqttStatus,
         healthError,
         bacnetError,
         health: health ?? null,
         bacnetSummary: bacnet
           ? {
               ok: bacnet.ok,
-              status_code: bacnet.status_code,
+              driver: bacnet.driver,
+              transport: bacnet.transport,
+              bindInterface: bacnet.interface,
+              port: bacnet.port,
               error: bacnet.error,
-              jsonrpc_error: bacnet.body?.error ?? null,
             }
           : null,
         VITE_API_BASE: import.meta.env.VITE_API_BASE ?? "(unset)",
@@ -92,7 +92,6 @@ export function StackStatusStrip() {
   }, [
     apiStatus,
     bacnetStatus,
-    mqttStatus,
     healthLoading,
     bacnetLoading,
     healthError,
@@ -114,25 +113,12 @@ export function StackStatusStrip() {
         label="BACnet"
         title={
           bacnetStatus === "green"
-            ? "BACnet gateway OK"
+            ? bacnet
+              ? `${bacnet.driver ?? "BACnet driver"} on ${bacnet.interface ?? "?"}:${bacnet.port ?? "?"}`
+              : "BACnet driver ready"
             : bacnetStatus === "red"
-              ? "BACnet gateway unreachable"
+              ? "BACnet driver unreachable"
               : "Checking…"
-        }
-      />
-      <StatusDot
-        status={mqttStatus}
-        label="MQTT bridge"
-        title={
-          mqttStatus === "green"
-            ? mqtt?.broker_url
-              ? `Connected to ${mqtt.broker_url}`
-              : "Connected"
-            : mqttStatus === "yellow"
-              ? mqtt?.last_error
-                ? `Disconnected: ${mqtt.last_error}`
-                : "Enabled but disconnected"
-              : "Not enabled or no bridge"
         }
       />
     </div>

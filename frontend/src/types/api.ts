@@ -6,9 +6,16 @@ export interface PlatformConfig {
   brick_ttl_dir?: string | null;
   bacnet_enabled?: boolean;
   bacnet_scrape_interval_min?: number;
-  bacnet_server_url?: string | null;
-  bacnet_site_id?: string | null;
-  bacnet_gateways?: string | null;
+  /**
+   * Embedded rusty-bacnet driver settings (Phase 2.5d).
+   * Legacy ``bacnet_server_url`` / ``bacnet_site_id`` / ``bacnet_gateways``
+   * were retired when the JSON-RPC diy-bacnet-server path was removed.
+   */
+  bacnet_interface?: string;
+  bacnet_port?: number;
+  bacnet_broadcast_address?: string;
+  bacnet_apdu_timeout_ms?: number;
+  bacnet_device_instance?: number | null;
   open_meteo_enabled?: boolean;
   open_meteo_interval_hours?: number;
   open_meteo_latitude?: number;
@@ -197,23 +204,21 @@ export interface Capabilities {
   ai_backend: "disabled";
 }
 
-/** POST /bacnet/server_hello response (API returns { ok, body? } where body is JSON-RPC). */
-export interface MqttBridgeStatus {
-  enabled: boolean;
-  connected: boolean;
-  broker_url: string | null;
-  last_error: string | null;
-}
-
+/**
+ * POST /bacnet/server_hello response (Phase 2.5d+).
+ *
+ * The endpoint is now a config echo — no BACnet traffic is sent. The
+ * frontend uses ``ok`` as the status-dot colour input and displays
+ * ``driver`` / ``transport`` / ``interface`` / ``port`` in the status
+ * strip tooltip so operators can see where the driver is bound.
+ */
 export interface BacnetServerHelloResponse {
   ok: boolean;
-  status_code?: number;
-  /** When ok is false: DIY gateway base URL the API tried (from OFDD_BACNET_SERVER_URL or RDF). */
-  gateway_url?: string;
-  body?: {
-    result?: { message?: string; mqtt_bridge?: MqttBridgeStatus };
-    error?: unknown;
-  };
+  driver?: string;
+  transport?: string;
+  interface?: string;
+  port?: number;
+  /** Backwards-compat: pre-2.5d errors still come through ``error``. */
   error?: string;
 }
 

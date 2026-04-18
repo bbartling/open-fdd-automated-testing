@@ -323,43 +323,6 @@ export function bacnetWriteProperty(body: WritePropertyProxyBody, gateway: strin
   });
 }
 
-export function bacnetSupervisoryLogicChecks(
-  body: PointDiscoveryBody,
-  gateway: string,
-) {
-  return apiFetch<BacnetProxyResult>(`/bacnet/supervisory_logic_checks${_bacnetGw(gateway)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-
-export function bacnetReadPointPriorityArray(
-  body: {
-    url?: string;
-    request: { device_instance: number; object_identifier: string };
-  },
-  gateway: string,
-) {
-  return apiFetch<BacnetProxyResult>(`/bacnet/read_point_priority_array${_bacnetGw(gateway)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-
-/** Proxy to gateway POST /modbus/read_registers (utility meters, eGauge, etc.). */
-export function bacnetModbusReadRegisters(
-  body: Record<string, unknown>,
-  gateway: string,
-) {
-  return apiFetch<BacnetProxyResult>(`/bacnet/modbus_read_registers${_bacnetGw(gateway)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-
 // Rules API (FDD rule YAML: list, upload, delete, sync definitions)
 export function uploadRule(filename: string, content: string) {
   return apiFetch<{ ok: boolean; path?: string; filename?: string }>("/rules", {

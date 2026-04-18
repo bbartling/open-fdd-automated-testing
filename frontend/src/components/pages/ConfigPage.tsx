@@ -105,12 +105,14 @@ function ConfigSummary({ config }: { config: PlatformConfig }) {
           <dd className="font-mono text-foreground">{formatConfigValue(config.bacnet_enabled)}</dd>
           <dt className="text-muted-foreground">Scrape interval (min)</dt>
           <dd className="font-mono text-foreground">{formatConfigValue(config.bacnet_scrape_interval_min)}</dd>
-          <dt className="text-muted-foreground">Server URL</dt>
-          <dd className="truncate font-mono text-foreground" title={String(config.bacnet_server_url ?? "")}>{formatConfigValue(config.bacnet_server_url)}</dd>
-          <dt className="text-muted-foreground">Site ID</dt>
-          <dd className="font-mono text-foreground">{formatConfigValue(config.bacnet_site_id)}</dd>
-          <dt className="text-muted-foreground">Gateways</dt>
-          <dd className="truncate font-mono text-foreground" title={String(config.bacnet_gateways ?? "")}>{formatConfigValue(config.bacnet_gateways)}</dd>
+          <dt className="text-muted-foreground">Interface</dt>
+          <dd className="truncate font-mono text-foreground" title={String(config.bacnet_interface ?? "")}>{formatConfigValue(config.bacnet_interface)}</dd>
+          <dt className="text-muted-foreground">Port</dt>
+          <dd className="font-mono text-foreground">{formatConfigValue(config.bacnet_port)}</dd>
+          <dt className="text-muted-foreground">Broadcast</dt>
+          <dd className="truncate font-mono text-foreground" title={String(config.bacnet_broadcast_address ?? "")}>{formatConfigValue(config.bacnet_broadcast_address)}</dd>
+          <dt className="text-muted-foreground">APDU timeout (ms)</dt>
+          <dd className="font-mono text-foreground">{formatConfigValue(config.bacnet_apdu_timeout_ms)}</dd>
 
           <span className="col-span-full mt-2 border-b border-border/60 pb-1 font-medium text-muted-foreground">Open-Meteo</span>
           <dt className="text-muted-foreground">Enabled</dt>
@@ -265,10 +267,31 @@ export function ConfigPage() {
               data-testid="config-bacnet-scrape-interval"
             />
             <ConfigField
-              label="BACnet server URL"
-              value={form.bacnet_server_url ?? ""}
-              onChange={(v) => update("bacnet_server_url", String(v))}
-              placeholder="http://localhost:8080"
+              label="Bind interface"
+              value={form.bacnet_interface ?? ""}
+              onChange={(v) => update("bacnet_interface", String(v))}
+              placeholder="0.0.0.0"
+            />
+            <ConfigField
+              label="Port"
+              type="number"
+              value={form.bacnet_port ?? 47808}
+              onChange={(v) => update("bacnet_port", Number(v))}
+              min={1}
+              max={65535}
+            />
+            <ConfigField
+              label="Broadcast address"
+              value={form.bacnet_broadcast_address ?? ""}
+              onChange={(v) => update("bacnet_broadcast_address", String(v))}
+              placeholder="255.255.255.255"
+            />
+            <ConfigField
+              label="APDU timeout (ms)"
+              type="number"
+              value={form.bacnet_apdu_timeout_ms ?? 6000}
+              onChange={(v) => update("bacnet_apdu_timeout_ms", Number(v))}
+              min={500}
             />
           </CardContent>
         </Card>
