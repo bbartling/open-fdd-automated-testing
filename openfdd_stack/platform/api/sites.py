@@ -1,16 +1,68 @@
-"""Sites CRUD API."""
+"""Sites CRUD API.
+
+Postgres is authoritative; when ``OFDD_STORAGE_BACKEND=selene`` a parallel
+``:site`` node is upserted/deleted in SeleneDB after every mutation so the
+graph stays aligned with the relational source of truth. Sync failures log a
+warning and never fail the CRUD response \u2014 the Postgres write is what counts,
+and a backfill job can reconcile. Phase 4 removes the Postgres writes.
+"""
 
 import json
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 
+from openfdd_stack.platform.config import get_platform_settings
 from openfdd_stack.platform.database import get_conn
 from openfdd_stack.platform.data_model_ttl import sync_ttl_to_file
 from openfdd_stack.platform.api.models import SiteCreate, SiteRead, SiteUpdate
 from openfdd_stack.platform.realtime import emit, TOPIC_CRUD_SITE
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/sites", tags=["sites"])
+
+
+def _selene_enabled() -> bool:
+    return getattr(get_platform_settings(), "storage_backend", "timescale") == "selene"
+
+
+def _selene_upsert_site(row: dict) -> None:
+    """Best-effort mirror of a sites row into SeleneDB. Swallows all errors."""
+    if not _selene_enabled():
+        return
+    try:
+        from openfdd_stack.platform.selene import (
+            make_selene_client_from_settings,
+            upsert_site,
+        )
+
+        with make_selene_client_from_settings() as client:
+            upsert_site(client, dict(row))
+    except Exception as exc:  # noqa: BLE001 \u2014 CRUD must succeed regardless
+        logger.warning(
+            "selene site sync skipped (%s); Postgres write remains authoritative.",
+            exc,
+        )
+
+
+def _selene_delete_site(site_id: str) -> None:
+    if not _selene_enabled():
+        return
+    try:
+        from openfdd_stack.platform.selene import (
+            delete_site,
+            make_selene_client_from_settings,
+        )
+
+        with make_selene_client_from_settings() as client:
+            delete_site(client, site_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "selene site delete sync skipped (%s); Postgres deletion stands.",
+            exc,
+        )
 
 
 @router.get("", response_model=list[SiteRead])
@@ -43,6 +95,7 @@ def create_site(body: SiteCreate):
         sync_ttl_to_file()
     except Exception:
         pass  # CRUD succeeds even if TTL sync fails (e.g. read-only filesystem)
+    _selene_upsert_site(dict(row))
     emit(TOPIC_CRUD_SITE + ".created", {"id": str(row["id"]), "name": row["name"]})
     return SiteRead.model_validate(dict(row))
 
@@ -103,6 +156,7 @@ def update_site(site_id: UUID, body: SiteUpdate):
         sync_ttl_to_file()
     except Exception:
         pass
+    _selene_upsert_site(dict(row))
     emit(TOPIC_CRUD_SITE + ".updated", {"id": str(site_id)})
     return SiteRead.model_validate(dict(row))
 
@@ -136,5 +190,6 @@ def delete_site(site_id: UUID):
         sync_ttl_to_file()
     except Exception:
         pass
+    _selene_delete_site(site_id_str)
     emit(TOPIC_CRUD_SITE + ".deleted", {"id": site_id_str})
     return {"status": "deleted"}
