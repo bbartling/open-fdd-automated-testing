@@ -76,6 +76,18 @@ class _ScrapeTransport(Transport):
             raise self.raises_for_device[device.device_instance]
         return list(self.results_by_device.get(device.device_instance, []))
 
+    async def write_property(
+        self,
+        device,
+        object_type,
+        object_instance,
+        property_name,
+        value,
+        *,
+        priority=None,
+    ):
+        raise NotImplementedError
+
 
 # ---------------------------------------------------------------------------
 # Selene mock — handles list_nodes / list_edges / ts_write

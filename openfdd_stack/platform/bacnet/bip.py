@@ -444,11 +444,100 @@ class BipTransport(Transport):
             )
         return results
 
+    async def write_property(
+        self,
+        device: DiscoveredDevice,
+        object_type: str,
+        object_instance: int,
+        property_name: str,
+        value: float | int | bool | str | None,
+        *,
+        priority: int | None = None,
+    ) -> None:
+        """Write one property; raises :class:`BacnetError` on failure.
+
+        Value tagging: ``None`` → ``PropertyValue.null()`` (relinquishes
+        a commandable slot); ``bool`` → ``boolean``; ``int`` on analog
+        object-types (AnalogInput/Output/Value) → ``unsigned`` (for
+        commands) or ``real`` depending on the property; ``float`` →
+        ``real``; ``str`` → ``character_string``. Anything else raises
+        :class:`BacnetDriverError` — callers should serialise exotic
+        values themselves.
+        """
+        rb = _require_rusty_bacnet()
+        client = self._ensure_client()
+        prop_id = _PROPERTY_NAME_TO_ID.get(property_name)
+        if prop_id is None:
+            raise BacnetDriverError(f"unsupported property name: {property_name!r}")
+        try:
+            rusty_type = _rusty_object_type(object_type)
+        except ValueError as exc:
+            raise BacnetDriverError(f"unknown object type: {object_type!r}") from exc
+        oid = rb.ObjectIdentifier(rusty_type, object_instance)
+        pid = rb.PropertyIdentifier.from_raw(prop_id)
+        pv = _python_to_property_value(rb, object_type, property_name, value)
+        try:
+            await client.write_property(device.address, oid, pid, pv, priority=priority)
+        except Exception as exc:  # noqa: BLE001
+            raise _translate_rusty_error(exc) from exc
+
 
 # ---------------------------------------------------------------------------
 # Translation helpers — all operate on rusty-bacnet values, kept module-local
 # so the public surface stays clean.
 # ---------------------------------------------------------------------------
+
+
+def _python_to_property_value(
+    rb: Any,
+    object_type: str,
+    property_name: str,
+    value: float | int | bool | str | None,
+) -> Any:
+    """Wrap a Python scalar into the ``rusty_bacnet.PropertyValue`` tag
+    that matches the ``(object_type, property_name)`` pair.
+
+    Rules (simple for now, extend as we support more properties):
+
+    - ``None`` → ``null()`` (relinquish a commandable slot)
+    - ``bool`` → ``boolean()`` regardless of object type
+    - ``int`` / ``float`` on analog object types → ``real()``
+    - ``int`` on multi-state object types → ``unsigned()``
+    - ``str`` → ``character_string()``
+
+    Raises :class:`BacnetDriverError` on combinations we don't yet
+    handle. The API handler surfaces that to the user as a 400, so
+    operators see exactly which write shape is unsupported.
+    """
+    if value is None:
+        return rb.PropertyValue.null()
+    # ``bool`` is a subclass of ``int`` in Python — check it first.
+    if isinstance(value, bool):
+        return rb.PropertyValue.boolean(value)
+    otype_lower = object_type.lower()
+    is_analog = otype_lower.startswith("analog") or otype_lower in {
+        "real",
+        "largeanalogvalue",
+    }
+    is_multistate = otype_lower.startswith("multistate")
+    is_binary = otype_lower.startswith("binary")
+    if isinstance(value, (int, float)):
+        if is_analog:
+            return rb.PropertyValue.real(float(value))
+        if is_multistate:
+            return rb.PropertyValue.unsigned(int(value))
+        if is_binary:
+            # 0/1 on a binary object → enumerated present-value.
+            return rb.PropertyValue.enumerated(int(value))
+        # Fallback: treat numeric as real (safe for AnalogValue-like
+        # vendor-proprietary objects).
+        return rb.PropertyValue.real(float(value))
+    if isinstance(value, str):
+        return rb.PropertyValue.character_string(value)
+    raise BacnetDriverError(
+        f"unsupported value type {type(value).__name__} for "
+        f"{object_type}.{property_name}"
+    )
 
 
 def _discovered_from_rusty(rusty: Any) -> DiscoveredDevice:

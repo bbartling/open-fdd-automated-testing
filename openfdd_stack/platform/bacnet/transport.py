@@ -205,3 +205,28 @@ class Transport(ABC):
         callers zip results back to their point bindings and know which
         samples to drop (``error is not None``) and which to write.
         """
+
+    @abstractmethod
+    async def write_property(
+        self,
+        device: DiscoveredDevice,
+        object_type: str,
+        object_instance: int,
+        property_name: str,
+        value: float | int | bool | str,
+        *,
+        priority: int | None = None,
+    ) -> None:
+        """Write a single property on a remote object.
+
+        ``value`` is a Python scalar — transports translate to the
+        matching BACnet PropertyValue variant (real / unsigned /
+        boolean / …) using ``object_type`` + ``property_name`` to pick
+        the right tag. ``priority`` is the BACnet priority slot
+        (1-16); ``None`` writes without priority (some objects) or to
+        the default slot. ``value=None`` writes NULL to relinquish.
+
+        Raises :class:`BacnetError` subclasses on protocol failure —
+        unlike the batch read path, a single-write failure is fatal
+        for the call (the API handler surfaces it to the user).
+        """
