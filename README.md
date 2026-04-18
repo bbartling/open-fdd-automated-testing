@@ -90,20 +90,6 @@ printf '%s' 'YourSecurePassword' | ./scripts/bootstrap.sh \
   --password-stdin
 ```
 
-**Dashboard “BACnet” status:** The strip is green when the **API container** can reach the DIY gateway (`OFDD_BACNET_SERVER_URL`, usually `http://host.docker.internal:8080` from compose). The knowledge graph (`config/data_model.ttl`, `ofdd:bacnetServerUrl`) may still say `http://localhost:8080` for local dev; **`OFDD_BACNET_SERVER_URL` in `stack/.env` always wins** over that value in containers so drivers and config stay aligned with Docker. **GET `/config`** merges the same env URL into the JSON for the UI so the Config screen matches runtime. Contract tests: `openfdd_stack/tests/platform/test_platform_config_contract.py`. The DIY BACnet service is usually **`network_mode: host`**, so it is **not** on the same Docker bridge as `api` / `frontend` — traffic is **host ↔ bridge** routing (and often firewall/hairpin rules), not ordinary “sibling container” DNS on the default network. On many Linux hosts **hairpin routing fails**: both `host.docker.internal` and the Docker bridge gateway (for example `172.19.0.1`) time out even though `curl http://localhost:8080/server_hello` on the host works. Fix it by passing **`OFDD_BACNET_ADDRESS`** into the API and scraper (compose does this from `stack/.env`) so the stack retries **`http://<that-LAN-IPv4>:8080`**, or set **`OFDD_BACNET_SERVER_URL`** explicitly in `stack/.env` to that URL. Bootstrap **`--bacnet-address`** writes both. **`./scripts/bootstrap.sh --verify`** and a **full** default bootstrap (when the host gateway responds on :8080) can **auto-write** `OFDD_BACNET_SERVER_URL` to the host’s default-route IPv4 (or the IPv4 from `OFDD_BACNET_ADDRESS` when set) and recreate **api** and **bacnet-scraper** so the API→gateway check passes without manual edits.
-
-**If every URL still times out** (including `http://<LAN-IP>:8080` after auto-fix): this is almost always **host firewall or routing** blocking **Docker bridge → host TCP :8080**, not a stale UI build. **Rebuilding the frontend container does not fix BACnet online** — the browser calls the API, and the API must open TCP to the gateway. Inspect **`sudo ufw status`**, **`nft`/`iptables` FORWARD** rules, and **`rp_filter`** / hairpin settings for the Docker bridge. Host-only curl can succeed while the UI is red if the frontend was talking to the wrong API host; use the app through **Caddy on port 80 or 8880** (recommended), not raw `:5173`, unless you know what you are doing. Raw **:5173** uses `vite preview` with `VITE_API_BASE=/api`: requests go to `/api/bacnet/…` and the preview proxy must **strip `/api`** before forwarding to Uvicorn (fixed in `frontend/vite.config.ts`); without that, the Stack strip shows API/BACnet offline even when the API is healthy.
-
-**Rebuild API + frontend after a git pull (normal operators):**
-
-```bash
-cd open-fdd-afdd-stack/stack
-docker compose build api frontend && docker compose up -d api frontend
-```
-
-Or one maintenance pass (pull, rebuild stack, optional tests): `./scripts/bootstrap.sh --maintenance --update --verify --force-rebuild` (add `--test` if you want pytest too).
-
-**LAN / firewall / ports:** See [Standard HTTP lab: remote LAN access](https://bbartling.github.io/open-fdd-afdd-stack/getting_started#standard-http-lab-remote-lan-access) in the Stack Docs (bearer keys in `stack/.env`, `http://` vs `https://`, ports **80** / **8880** / **8000**, and automatic **ufw**).
 
 ### Standard hardened stack — self-signed TLS (Caddy) and app login
 
@@ -150,10 +136,117 @@ Combine with health checks: `./scripts/bootstrap.sh --verify --test`.
 
 ---
 
-## Python layout
+
+## Optional: OpenClaw + MCP (AI-Assisted Data Modeling & FDD)
+
+This section enables AI-assisted data modeling, tagging, and fault detection (FDD) using OpenClaw and the MCP (Model Context Protocol) service.
+
+---
+
+### 1. Bootstrap AFDD stack with MCP enabled
+
+```bash
+cd open-fdd-afdd-stack
+
+printf '%s' 'YourSecurePassword' | ./scripts/bootstrap.sh \
+  --bacnet-address 192.168.204.16/24:47808 \
+  --bacnet-instance 12345 \
+  --user ben \
+  --password-stdin \
+  --enable-mcp
+```
+
+The `--enable-mcp` flag starts the internal MCP/RAG service on port `8090`.
+
+---
+
+### 2. Setup OpenClaw in a separate Docker container
+
+```bash
+git clone https://github.com/openclaw/openclaw.git
+cd openclaw
+chmod +x docker-setup.sh
+./docker-setup.sh
+```
+
+To access the OpenClaw terminal UI:
+
+```bash
+docker exec -it openclaw-openclaw-gateway-1 bash
+openclaw tui
+```
+
+---
+
+### 3. Configure `.env` for Open-FDD access
+
+Edit:
+
+```bash
+open-fdd-afdd-stack/stack/.env
+```
+
+After bootstrapping, this file contains the API keys and access tokens required for the Open-FDD platform. These can be used by OpenClaw to interact with the system.
+
+---
+
+### 4. Connect OpenClaw to the AFDD Docker network
+
+```bash
+docker network connect stack_default openclaw-openclaw-gateway-1
+```
+
+Verify the connection:
+
+```bash
+docker inspect openclaw-openclaw-gateway-1 \
+  --format '{{json .NetworkSettings.Networks}}'
+```
+
+---
+
+### 5. Test MCP connectivity from OpenClaw
+
+Once connected, OpenClaw can access the MCP service at:
+
+```text
+http://openfdd_mcp_rag:8090
+```
+
+Alternatively, you can use the container IP address (e.g., `http://172.x.x.x:8090`).
+
+---
+
+### What this enables
+
+* Query MCP for building data models
+* Assist with Brick data model tagging
+* Generate and refine FDD rules
+* Analyze faults and telemetry data
+* Automate workflows against the AFDD stack
+
+---
+
+### Architecture (simplified)
+
+```text
+OpenClaw (AI Agent)
+        |
+        | HTTP (Docker internal network)
+        v
+MCP / RAG Service (openfdd_mcp_rag:8090)
+        |
+        v
+Open-FDD AFDD Stack (API + DB + BACnet)
+```
+
+---
 
 
-Local development (co-developing engine + stack) and push to a new or existing development branch:
+## Local development
+
+
+Python layout (co-developing engine + stack) and push to a new or existing development branch:
 
 ```bash
 python3 -m venv .venv

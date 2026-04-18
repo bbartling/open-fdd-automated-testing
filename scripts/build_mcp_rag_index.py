@@ -3,7 +3,8 @@
 Build a lightweight retrieval index for Open-FDD MCP RAG service.
 
 Inputs:
-- docs markdown tree
+- docs markdown tree (this repo `docs/`)
+- optional extra markdown roots via repeated `--extra-docs-dir` (bootstrap uses sparse `docs/` clones)
 - generated docs txt (pdf/open-fdd-docs.txt) when present
 - optional API metadata (openapi snapshot path)
 
@@ -57,10 +58,12 @@ def read_markdown_chunks(
     chunk_size: int,
     *,
     chunk_tags: list[str] | None = None,
+    logical_source: str | None = None,
 ) -> list[Chunk]:
     text = path.read_text(encoding="utf-8", errors="replace")
     lines = text.splitlines()
     tags_base = chunk_tags if chunk_tags is not None else ["docs", "markdown"]
+    display_source = logical_source if logical_source else path.as_posix()
     chunks: list[Chunk] = []
     current_section = path.stem
     buf: list[str] = []
@@ -83,11 +86,11 @@ def read_markdown_chunks(
             slice_words = words[start : start + chunk_size]
             content = " ".join(slice_words).strip()
             if content:
-                chunk_id = f"{path.as_posix()}::{section_idx}:{sub}:{idx}"
+                chunk_id = f"{display_source}::{section_idx}:{sub}:{idx}"
                 chunks.append(
                     Chunk(
                         chunk_id=chunk_id,
-                        source=path.as_posix(),
+                        source=display_source,
                         section=current_section,
                         content=content,
                         tags=list(tags_base),
@@ -212,6 +215,16 @@ def build_index(chunks: list[Chunk]) -> dict[str, Any]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build Open-FDD MCP RAG index.")
     parser.add_argument("--docs-dir", type=Path, default=DEFAULT_DOCS_DIR)
+    parser.add_argument(
+        "--extra-docs-dir",
+        action="append",
+        default=[],
+        type=Path,
+        help=(
+            "Additional markdown roots (typically .../repo/docs from sparse clones). "
+            "Repeatable; indexed with stable source labels upstream:<repo>/docs/...."
+        ),
+    )
     parser.add_argument("--docs-txt", type=Path, default=DEFAULT_DOCS_TXT)
     parser.add_argument("--openapi-json", type=Path, default=None)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
@@ -231,6 +244,25 @@ def main() -> int:
             if "_build" in md.parts or md.name == "404.md":
                 continue
             chunks.extend(read_markdown_chunks(md, args.chunk_size))
+
+    for extra_docs in args.extra_docs_dir:
+        er = extra_docs.resolve()
+        if not er.is_dir():
+            continue
+        repo_slug = er.parent.name
+        for md in sorted(er.rglob("*.md")):
+            if "_build" in md.parts or md.name == "404.md":
+                continue
+            rel = md.relative_to(er).as_posix()
+            logical = f"{repo_slug}/docs/{rel}"
+            chunks.extend(
+                read_markdown_chunks(
+                    md,
+                    args.chunk_size,
+                    chunk_tags=["docs", "markdown", f"upstream:{repo_slug}"],
+                    logical_source=logical,
+                )
+            )
 
     openclaw_root = REPO_ROOT / "openclaw"
     if openclaw_root.is_dir():

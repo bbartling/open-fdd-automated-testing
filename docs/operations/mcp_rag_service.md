@@ -12,6 +12,7 @@ Open-FDD can run an optional MCP-style retrieval service derived from canonical 
 
 - Canonical human docs: `docs/` and generated `pdf/open-fdd-docs.txt`.
 - Derived AI index: `stack/mcp-rag/index/rag_index.json`.
+- **Upstream markdown (bootstrap `--with-mcp-rag` only):** shallow sparse `git` clones under `stack/mcp-rag/.vendor-docs/<repo>/docs` from [open-fdd/docs](https://github.com/bbartling/open-fdd/tree/master/docs), [diy-bacnet-server/docs](https://github.com/bbartling/diy-bacnet-server/tree/master/docs), and [easy-aso/docs](https://github.com/bbartling/easy-aso/tree/master/docs). Those trees are indexed with tags like `upstream:open-fdd` and stable `source` paths such as `open-fdd/docs/rules/overview.md` (not the full repositories).
 
 Never edit index artifacts as source-of-truth documentation.
 
@@ -23,7 +24,7 @@ Run:
 ./scripts/bootstrap.sh --with-mcp-rag
 ```
 
-This flow builds docs text when needed, builds retrieval index, and starts the MCP RAG service profile.
+This flow clones upstream `docs/` folders when `git` is available, builds docs text when needed, builds the retrieval index (stack + upstream markdown), and starts the MCP RAG service profile. Offline or clone failures still produce an index from this repository’s `docs/` only.
 
 For module-focused operations, combine with bootstrap mode:
 

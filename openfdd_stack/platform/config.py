@@ -42,6 +42,7 @@ class PlatformSettings(BaseSettings):
         "config/data_model.ttl"  # unified graph: Brick + BACnet + config; auto-synced on CRUD
     )
     app_title: str = "Open-FDD API"
+    # Bump with root pyproject.toml [project].version and frontend/package.json "version".
     app_version: str = "2.0.14"
     debug: bool = False
 

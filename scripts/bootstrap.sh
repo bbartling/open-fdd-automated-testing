@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 #
-# open-fdd-afdd-stack bootstrap: full Docker stack — DB, BACnet server, BACnet scraper,
-# weather scraper, FDD loop, host-stats, API, Caddy.
-# ./scripts/bootstrap.sh --reset-data && ./scripts/bootstrap.sh --test
 # Default behavior (no args):
 #   ./scripts/bootstrap.sh
 #     -> builds and starts the FULL stack (Grafana and MQTT broker are NOT started by default)
@@ -23,42 +20,22 @@
 #   ./scripts/bootstrap.sh --build api ...      # rebuild and restart only selected services
 #   (Available services: api, bacnet-server, bacnet-scraper, caddy, db, fdd-loop, frontend, grafana [--with-grafana], host-stats, mosquitto [--with-mqtt-bridge], weather-scraper)
 #   ./scripts/bootstrap.sh --frontend          # before start: stop frontend, remove frontend node_modules volume (fresh npm install on next up)
+#   ./scripts/bootstrap.sh --reset-data        # delete all sites via API + POST /data-model/reset (testing)
 #
-# Frontend serving mode (no separate “frontend rebuild” workflow):
-#   Do not run npm on the host for the stack UI unless you prefer local dev (vite dev) outside Docker.
-#   Default ./scripts/bootstrap.sh starts openfdd_frontend, which runs npm ci if node_modules is empty,
-#   npm run build, then `vite preview` on dist (same Vite as package-lock; no floating npx static server).
-#   You do not need docker compose --build frontend for normal pulls: compose up rebuilds inside the container.
-#   Use --frontend only to wipe the frontend_node_modules volume after package.json / lockfile changes.
-#   Use --build frontend if you already use compose directly and want to force-recreate that service.
+#
 #
 # Site maintenance (pull both repos, prune, rebuild, verify):
 #   ./scripts/bootstrap.sh --maintenance --update --verify
 #   --verify here is HTTP health only (BACnet server_hello, API /health), not pytest.
-#   Pull latest PyPI deps for diy-bacnet-server (e.g. bacpypes3): add --force-rebuild so Docker
-#   rebuilds images even when git HEAD did not change.
-# Full maintenance + pytest + optional DIY server tests in container:
 #   ./scripts/bootstrap.sh --maintenance --update --verify --force-rebuild --test --diy-bacnet-tests
+#
+#
 # Heavy ops example (pull, rebuild, verify, tests, app user, frontend volume reset, self-signed Caddy):
-#   printf '%s' 'YOUR_PASSWORD' | ./scripts/bootstrap.sh --maintenance --update --verify --force-rebuild --test --diy-bacnet-tests --user ben --password-stdin --frontend --caddy-self-signed
+#   printf '%s' 'asdf' | ./scripts/bootstrap.sh --maintenance --update --verify --force-rebuild --test --diy-bacnet-tests --user ben --password-stdin --frontend --caddy-self-signed
+#   printf '%s' 'asdf' | ./scripts/bootstrap.sh --maintenance --update --verify --force-rebuild --test --diy-bacnet-tests --user ben --password-stdin --frontend --bacnet-address 192.168.204.18/24:47808 --bacnet-instance 123456
 #   Standard HTTP lab (OT NIC): ./scripts/bootstrap.sh --bacnet-address 192.168.204.11/24:47808 --bacnet-instance 1235423
-#
-# Day 1 after git clone (full stack + self-signed HTTPS on Caddy; no tests, no --frontend, no git pull):
-#   ./scripts/bootstrap.sh --caddy-self-signed
-# Same with Phase-1 UI login (password on stdin):
-#   printf '%s' 'YOUR_PASSWORD' | ./scripts/bootstrap.sh --user YOURNAME --password-stdin --caddy-self-signed
-#
-# Optional hostname for cert CN/SAN: add --caddy-tls-cn my.machine.local
-# Revert Caddy to HTTP-only on :80: ./scripts/bootstrap.sh --caddy-http-only
-# Notes:
-# First MQTT enable: ./scripts/bootstrap.sh --with-mqtt-bridge   (then verify / test as needed)
-# Verify + tests	./scripts/bootstrap.sh --verify --test
-# Verify only (read-only)	./scripts/bootstrap.sh --verify
-# Verify + BACnet hairpin repair if needed	./scripts/bootstrap.sh --verify --autofix-bacnet
-# Tests only	./scripts/bootstrap.sh --test
-# Update then tests (same run): ./scripts/bootstrap.sh --update --test
-#
-#
+
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -222,7 +199,7 @@ Core:
   --mode MODE              Partial deployment mode: full, collector, model, engine (default: full)
   --with-grafana            Include Grafana (http://localhost:3000; optional SQL dashboards)
   --with-mqtt-bridge        Start Mosquitto + wire BACnet2MQTT env (experimental; future remote/MQTT use—not core product yet)
-  --with-mcp-rag            Include MCP RAG service (http://localhost:8090; retrieval over docs/text + optional guarded API tools)
+  --with-mcp-rag            Include MCP RAG service (http://localhost:8090; retrieval over this repo docs + generated text + sparse-cloned upstream docs/ from open-fdd, diy-bacnet-server, easy-aso; see stack/mcp-rag/.vendor-docs/)
   --doctor                  Read-only diagnostics: Docker, Compose, Python, argon2-cffi, paths (no stack changes). Exit 1 if critical checks fail.
   --verify                  Show running services + health checks (read-only; does not modify stack/.env or recreate containers)
   --autofix-bacnet          With --verify: if host BACnet is OK but API→gateway fails, run Linux hairpin repair (OFDD_BACNET_SERVER_URL + recreate api/bacnet-scraper)
@@ -1510,8 +1487,45 @@ verify() {
   echo ""
 }
 
+# Shallow sparse clones: only each repo's docs/ tree (engine, DIY gateway, easy-aso supervisor).
+# See scripts/build_mcp_rag_index.py --extra-docs-dir and stack/mcp-rag/.vendor-docs/ (.gitignore).
+MCP_RAG_VENDOR_DOCS_ROOT="${REPO_ROOT}/stack/mcp-rag/.vendor-docs"
+
+ensure_mcp_rag_upstream_sparse_docs() {
+  local tuple url name dest
+  if ! have_cmd git; then
+    echo "git not found; skipping upstream markdown clones for MCP RAG."
+    return 0
+  fi
+  mkdir -p "$MCP_RAG_VENDOR_DOCS_ROOT"
+  for tuple in \
+    "https://github.com/bbartling/open-fdd.git|open-fdd" \
+    "https://github.com/bbartling/diy-bacnet-server.git|diy-bacnet-server" \
+    "https://github.com/bbartling/easy-aso.git|easy-aso"; do
+    url="${tuple%%|*}"
+    name="${tuple##*|}"
+    dest="${MCP_RAG_VENDOR_DOCS_ROOT}/${name}"
+    if [[ -d "${dest}/.git" ]]; then
+      echo "Updating upstream docs (${name})..."
+      (cd "$dest" && git pull --ff-only --depth 1 >/dev/null 2>&1) || true
+    else
+      echo "Cloning upstream docs (${name}/docs only, sparse): ${url}"
+      rm -rf "$dest"
+      if git clone --depth 1 --filter=blob:none --sparse "$url" "$dest" >/dev/null 2>&1; then
+        if ! (cd "$dest" && git sparse-checkout set docs >/dev/null 2>&1); then
+          echo "WARN: git sparse-checkout set docs failed for ${name} (Git 2.25+ required); skipping ${name}."
+          rm -rf "$dest"
+        fi
+      else
+        echo "WARN: git clone failed for ${name} (offline, auth, or rate limit); MCP RAG will use this repo's docs/ only."
+      fi
+    fi
+  done
+}
+
 ensure_docs_text_and_rag_index() {
   local py
+  local -a rag_extra_dirs=()
   if [[ -x "$REPO_ROOT/.venv/bin/python" ]]; then
     py="$REPO_ROOT/.venv/bin/python"
   else
@@ -1522,13 +1536,21 @@ ensure_docs_text_and_rag_index() {
     fi
   fi
 
+  ensure_mcp_rag_upstream_sparse_docs
+
   if [[ ! -f "$REPO_ROOT/pdf/open-fdd-docs.txt" ]]; then
     echo "=== Building docs text for MCP RAG ==="
     (cd "$REPO_ROOT" && "$py" scripts/build_docs_pdf.py --no-pdf) || true
   fi
 
   echo "=== Building MCP RAG index ==="
-  (cd "$REPO_ROOT" && "$py" scripts/build_mcp_rag_index.py) || true
+  rag_extra_dirs=()
+  for name in open-fdd diy-bacnet-server easy-aso; do
+    if [[ -d "${MCP_RAG_VENDOR_DOCS_ROOT}/${name}/docs" ]]; then
+      rag_extra_dirs+=(--extra-docs-dir "${MCP_RAG_VENDOR_DOCS_ROOT}/${name}/docs")
+    fi
+  done
+  (cd "$REPO_ROOT" && "$py" scripts/build_mcp_rag_index.py "${rag_extra_dirs[@]}") || true
 }
 
 # --test scope: frontend lint + typecheck + vitest (unit); backend pytest (openfdd_stack/tests/); Caddy validate.

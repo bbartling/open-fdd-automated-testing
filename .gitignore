@@ -3,6 +3,9 @@
 /data
 /tmp
 
+# Sparse-cloned upstream markdown for MCP RAG (bootstrap --with-mcp-rag)
+/stack/mcp-rag/.vendor-docs/
+
 /__pycache__
 
 # word reports
