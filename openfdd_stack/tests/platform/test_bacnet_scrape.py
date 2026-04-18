@@ -9,15 +9,12 @@ answers the REST enumeration calls in ``load_scrape_plan``.
 from __future__ import annotations
 
 import asyncio
-from typing import Any
 
 import httpx
-import pytest
 
 from openfdd_stack.platform.bacnet import (
     BacnetScraper,
     DiscoveredDevice,
-    DiscoveredObject,
     PropertyRead,
     PropertyReadResult,
     ScrapeBinding,
@@ -491,6 +488,56 @@ def test_scrape_once_drops_non_numeric_present_values():
     # Non-numeric isn't an error either — it's a supported BACnet
     # value shape we choose not to persist.
     assert result.read_errors == 0
+
+
+def test_scrape_once_missing_device_counts_as_device_failure():
+    """Plan with bindings but no matching DiscoveredDevice must not KeyError.
+
+    Regression guard for the plan-construction edge case where
+    ``bindings_by_device`` has an entry that ``devices`` doesn't cover
+    (e.g. stale ScrapePlan reused after a device deletion).
+    """
+    dev1_bindings = [
+        ScrapeBinding(
+            device_instance=1,
+            device_address="10.0.0.1:47808",
+            object_type="AnalogInput",
+            object_instance=1,
+            point_node_id=500,
+        ),
+    ]
+    orphan_bindings = [
+        ScrapeBinding(
+            device_instance=99,
+            device_address="10.0.0.99:47808",
+            object_type="AnalogInput",
+            object_instance=1,
+            point_node_id=999,
+        ),
+    ]
+    plan = ScrapePlan(
+        devices={1: DiscoveredDevice(device_instance=1, address="10.0.0.1:47808")},
+        bindings_by_device={1: dev1_bindings, 99: orphan_bindings},
+    )
+    tx = _ScrapeTransport(
+        results_by_device={
+            1: [
+                PropertyReadResult(
+                    object_type="AnalogInput",
+                    object_instance=1,
+                    property="present_value",
+                    value=10.0,
+                )
+            ]
+        }
+    )
+    state = _SeleneForScrape()
+    scraper = BacnetScraper(tx, _selene_factory(state))
+    result = asyncio.run(scraper.scrape_once(plan))
+
+    # Device 1's sample still lands; device 99 counts as a failure.
+    assert result.samples_written == 1
+    assert result.device_failures == 1
 
 
 def test_scrape_once_returns_empty_result_when_plan_empty():

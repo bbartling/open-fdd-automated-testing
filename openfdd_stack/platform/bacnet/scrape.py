@@ -33,18 +33,15 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
-from openfdd_stack.platform.bacnet.errors import BacnetError
 from openfdd_stack.platform.bacnet.graph import (
     BACNET_DEVICE_LABEL,
     BACNET_OBJECT_LABEL,
     EXPOSES_OBJECT_EDGE,
-    POINT_LABEL,
     PROTOCOL_BINDING_EDGE,
 )
 from openfdd_stack.platform.bacnet.transport import (
     DiscoveredDevice,
     PropertyRead,
-    PropertyReadResult,
     Transport,
 )
 from openfdd_stack.platform.selene.client import SeleneClient
@@ -283,25 +280,37 @@ class BacnetScraper:
         if not plan.bindings_by_device:
             return ScrapeResult(0, 0, 0)
 
-        per_device = await asyncio.gather(
-            *(
-                self._scrape_one_device(
-                    plan.devices[device_instance],
-                    plan.bindings_by_device[device_instance],
+        # A binding entry with no matching device is a plan-construction
+        # bug — treat it as a device failure and keep going so the rest
+        # of the portfolio still scrapes. Indexing directly would KeyError
+        # out of the gather() and abort the whole pass.
+        device_failures = 0
+        scrape_tasks = []
+        for device_instance, bindings in plan.bindings_by_device.items():
+            device = plan.devices.get(device_instance)
+            if device is None:
+                device_failures += 1
+                logger.warning(
+                    "bacnet scrape plan missing device for bindings "
+                    "(device_instance=%d, bindings=%d)",
+                    device_instance,
+                    len(bindings),
                 )
-                for device_instance in plan.bindings_by_device
-            ),
-            return_exceptions=True,
-        )
+                continue
+            scrape_tasks.append(self._scrape_one_device(device, bindings))
+
+        per_device = await asyncio.gather(*scrape_tasks, return_exceptions=True)
 
         # Flatten samples + tally errors.
         all_samples: list[dict] = []
         total_read_errors = 0
-        device_failures = 0
         for entry in per_device:
-            if isinstance(entry, Exception):
+            if isinstance(entry, BaseException):
                 device_failures += 1
-                logger.warning("bacnet scrape device failed", exc_info=entry)
+                logger.warning(
+                    "bacnet scrape device failed",
+                    exc_info=(type(entry), entry, entry.__traceback__),
+                )
                 continue
             samples, errors = entry
             all_samples.extend(samples)
@@ -329,11 +338,9 @@ class BacnetScraper:
             )
             for b in bindings
         ]
-        try:
-            results = await self._transport.read_present_values(device, reads)
-        except BacnetError:
-            # Re-raise so the gather() path counts this as a device failure.
-            raise
+        # Any exception propagates: ``gather(return_exceptions=True)`` in
+        # ``scrape_once`` catches it and tallies it as a device failure.
+        results = await self._transport.read_present_values(device, reads)
 
         now_nanos = time.time_ns()
         samples: list[dict] = []

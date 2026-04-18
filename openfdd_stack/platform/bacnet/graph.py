@@ -329,13 +329,14 @@ def bind_object_to_point(
 
     The ``protocolBinding`` relationship is the link that the scraper
     walks to learn "this BACnet object's present-value becomes this
-    point's timeseries." Idempotent via :func:`_ensure_edge` — calling
-    this twice with the same ``(object, point)`` pair is a no-op.
+    point's timeseries."
 
-    Schema pack (``bacnet-driver.json``) defines the ``property`` field
-    on this edge with default ``"present_value"``; we send it as a
-    property so future variants (``"priority_array"``, ``"reliability"``)
-    can coexist on the same pair.
+    **Idempotency contract**: at most one ``protocolBinding`` edge per
+    ``(bacnet_object, point)`` pair. A subsequent call with a different
+    ``bacnet_property`` is a no-op — the original edge's ``property``
+    is not updated (Selene edges don't support property updates via
+    this client today). Rebinding to a different BACnet property means
+    deleting the existing edge first, which isn't a supported UX yet.
     """
     try:
         existing = client.get_node_edges(bacnet_object_node_id) or {}

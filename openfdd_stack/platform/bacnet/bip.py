@@ -349,27 +349,34 @@ class BipTransport(Transport):
     ) -> list[PropertyReadResult]:
         """Batch-read one property per object as a single RPM.
 
-        Unknown property names (not in ``_PROPERTY_NAME_TO_ID``) are
-        recorded as error entries in the result list rather than failing
-        the whole batch — scrape loops should keep moving even if one
-        binding references a property we don't support yet.
+        Unknown property names (not in ``_PROPERTY_NAME_TO_ID``) and
+        unknown object-type reprs (not in rusty-bacnet's ObjectType
+        enum) are each recorded as specific error entries in the
+        result list rather than failing the whole batch — scrape
+        loops should keep moving even if one binding is malformed.
+        Operators get the exact reason (``unsupported property name``
+        vs. ``unknown object type``) so misconfiguration is easy to
+        diagnose.
         """
         if not reads:
             return []
         rb = _require_rusty_bacnet()
         client = self._ensure_client()
 
+        # Build specs and remember per-read which ones we couldn't encode
+        # so we can emit specific error results later. ``encode_errors``
+        # is keyed by the original read index so we preserve order.
         specs: list[Any] = []
-        spec_keys: list[tuple[str, int, str]] = []
-        for read in reads:
+        encode_errors: dict[int, str] = {}
+        for idx, read in enumerate(reads):
             prop_id = _PROPERTY_NAME_TO_ID.get(read.property)
             if prop_id is None:
-                # Skipping here, but we still need to emit a result for
-                # the caller — collected after the RPM below.
+                encode_errors[idx] = f"unsupported property name: {read.property!r}"
                 continue
             try:
                 rusty_type = _rusty_object_type(read.object_type)
             except ValueError:
+                encode_errors[idx] = f"unknown object type: {read.object_type!r}"
                 continue
             oid = rb.ObjectIdentifier(rusty_type, read.object_instance)
             specs.append(
@@ -378,7 +385,6 @@ class BipTransport(Transport):
                     [(rb.PropertyIdentifier.from_raw(prop_id), None)],
                 )
             )
-            spec_keys.append((read.object_type, read.object_instance, read.property))
 
         rpm_result: Any = []
         if specs:
@@ -391,22 +397,22 @@ class BipTransport(Transport):
 
         values = _extract_property_values_by_object(rpm_result)
 
-        # Build results in the same order as ``reads``, filling errors
-        # for entries we couldn't translate to RPM specs.
+        # Build results in the same order as ``reads``, filling specific
+        # errors for entries we couldn't translate to RPM specs.
         results: list[PropertyReadResult] = []
-        for read in reads:
-            key = (read.object_type, read.object_instance)
-            prop_id = _PROPERTY_NAME_TO_ID.get(read.property)
-            if prop_id is None:
+        for idx, read in enumerate(reads):
+            if idx in encode_errors:
                 results.append(
                     PropertyReadResult(
                         object_type=read.object_type,
                         object_instance=read.object_instance,
                         property=read.property,
-                        error=f"unsupported property name: {read.property!r}",
+                        error=encode_errors[idx],
                     )
                 )
                 continue
+            prop_id = _PROPERTY_NAME_TO_ID[read.property]  # already validated above
+            key = (read.object_type, read.object_instance)
             value_or_error = (values.get(key) or {}).get(prop_id)
             if isinstance(value_or_error, dict) and "error" in value_or_error:
                 results.append(

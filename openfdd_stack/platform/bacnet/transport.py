@@ -83,7 +83,10 @@ class PropertyReadResult:
     object_type: str
     object_instance: int
     property: str
-    value: float | int | bool | str | None = None
+    # ``bytes`` is included because octet-string / bit-string properties
+    # decode to raw bytes via rusty-bacnet; the scraper currently drops
+    # them but the transport contract still has to surface them honestly.
+    value: float | int | bool | str | bytes | None = None
     error: str | None = None
 
 
