@@ -6,7 +6,9 @@ nav_order: 1
 
 # BACnet Integration
 
-Open-FDD uses [diy-bacnet-server](https://github.com/bbartling/diy-bacnet-server) as a BACnet/IP-to-JSON-RPC bridge. Discovery and scrape feed the same **data model** (building as a knowledge graph). The gateway uses **bacpypes3**’s built-in RDF (BACnetGraph) for discovery-to-RDF; Open-FDD merges that TTL and queries via SPARQL.
+Open-FDD embeds the [rusty-bacnet](https://github.com/jscott3201/rusty-bacnet) driver — a PyO3 binding to a full ASHRAE 135-2020 BACnet stack written in Rust. Both the API container (for ad-hoc discovery calls) and the scraper container (for periodic reads) instantiate a BACnet/IP client directly; there is no separate gateway container.
+
+Discovered devices and objects live as typed nodes in **SeleneDB** (`:bacnet_network`, `:bacnet_device`, `:bacnet_object`). Points are authored via the Sites / Equipment / Points CRUD API and linked to BACnet objects via `protocolBinding` edges. The scraper walks those bindings every interval and writes `present-value` samples via SeleneDB `ts_write`.
 
 ---
 
@@ -14,9 +16,11 @@ Open-FDD uses [diy-bacnet-server](https://github.com/bbartling/diy-bacnet-server
 
 | Component | Purpose |
 |-----------|---------|
-| **[diy-bacnet-server](https://github.com/bbartling/diy-bacnet-server)** | BACnet/IP UDP listener + HTTP JSON-RPC API. Discovers devices and objects; exposes present-value reads. Interactive OpenAPI/Swagger is disabled on the gateway; use **BACnet tools** in the React app or JSON-RPC. |
-| **BACnet scraper** | Platform service. Polls diy-bacnet-server on a schedule; **reads points from the data model** (points with `bacnet_device_id` and `object_identifier`) and writes readings to TimescaleDB. |
-| **Data model** | Sites, equipment, and points with BACnet addressing (`bacnet_device_id`, `object_identifier`, `object_name`). Configured via the **React frontend** (Config, Data model, Points) or the API. Single source of truth for what to scrape. |
+| **rusty-bacnet Python package** | PyO3 wrapper over the Rust protocol stack. Provides an async `BACnetClient` (WhoIs, ReadProperty, ReadPropertyMultiple, WriteProperty, Who-Has). Installed via the `[bacnet]` optional-dependencies extra. |
+| **`openfdd_stack.platform.bacnet.BipTransport`** | Thin adapter around `BACnetClient` for the BACnet/IP transport. `ScTransport` (BACnet/SC) is on the roadmap; the `Transport` ABC is the seam. |
+| **`BacnetDriver`** | Orchestrator: runs WhoIs + object-list enumeration, converts rusty-bacnet types to frozen dataclasses, and persists discovery results into SeleneDB via `upsert_bacnet_device` / `upsert_bacnet_object`. |
+| **`BacnetScraper`** | Periodic loop: `load_scrape_plan(selene)` walks the `:bacnet_device → :bacnet_object → :point` graph, issues one `ReadPropertyMultiple` per device in parallel, writes samples with `entity_id = point.id`. |
+| **Data model** | `:site`, `:equipment`, `:point` + `:bacnet_device`, `:bacnet_object`, `:protocolBinding`. Configured via the React frontend or the CRUD API. Single source of truth for what to scrape. |
 
 ---
 
@@ -24,42 +28,34 @@ Open-FDD uses [diy-bacnet-server](https://github.com/bbartling/diy-bacnet-server
 
 | Port | Protocol | Use |
 |------|----------|-----|
-| 47808 | UDP | BACnet/IP |
-| 8080 | HTTP | JSON-RPC API (no browser docs in default stack) |
+| 47808 | UDP | BACnet/IP (driver binds this inside the scraper / API containers) |
 
-Only **one** process on the host can use port 47808 (BACnet/IP). Run discovery **before** starting diy-bacnet-server so they do not conflict. diy-bacnet-server runs with `network_mode: host` so it binds to the host's network interface.
-
-### Multiple sites / gateways (one Open-FDD, several BACnet bridges)
-
-Use **`OFDD_BACNET_GATEWAYS`** (JSON array of `{ "url", "site_id", … }`) so the scraper and **BACnet tools → Gateway** dropdown can target **remote** diy-bacnet-server instances (one container or VM per site on the OT LAN). Keep **`OFDD_BACNET_SERVER_URL`** as the **default** gateway (often the local site: `http://host.docker.internal:8080` from the API container).
-
-Binding diy-bacnet HTTP to **127.0.0.1 only** on the host is awkward with Docker: Caddy in bridge mode reaches the gateway via **`host.docker.internal`**, which is not the same socket as loopback on Linux. Typical choices: (1) leave the gateway listening on all interfaces on the host (`--public` in compose) and **restrict port 8080 with a host firewall**, or (2) run Caddy with **`network_mode: host`** and `reverse_proxy 127.0.0.1:8080` for `/bacnet/*` if you truly need loopback-only RPC. Remote gateways use their **reachable URL** in `OFDD_BACNET_GATEWAYS` either way.
+Only **one** process on the host can use port 47808. The scraper container runs with `network_mode: host` so it binds directly to the host NIC that reaches the BAS.
 
 ---
 
-## Discovery and getting points into the data model
+## Discovery → points workflow
 
-All BACnet configuration for the **default stack** is done via the **data model** and the **React frontend** (or the API). The bundled scraper does not use a BACnet CSV file.
+Phase 2.5 retired the "push a TTL into the graph" path in favour of typed graph nodes + explicit protocol bindings. The current shape:
 
-1. **Run Who-Is and point discovery** — Use the React frontend (Config or Data model → BACnet panel) or the API. From the BACnet panel you can run **Test connection**, **Who-Is range**, and **Point discovery** (these proxy to diy-bacnet-server). diy-bacnet-server must be running (e.g. `./scripts/bootstrap.sh` starts it).
-2. **Graph and data model** — Use **POST /bacnet/point_discovery_to_graph** (device instance) to put BACnet devices and points into the **in-memory** BACnet graph. Whether the **file** `config/data_model.ttl` updates immediately depends on the **write_file** flag on that request; Brick **`ref:`** external references are still rebuilt from **Postgres** on full serialize. After discovery, ensure points exist in the DB (CRUD or import) and run a serialize path if you need `ref:` on disk right away—see [External representations → When ref triples appear in the TTL](../modeling/external_representations#when-ref-appears-in-the-ttl). Create points in the DB via the frontend or CRUD (set `bacnet_device_id`, `object_identifier`, `object_name`), or use **GET /data-model/export** → LLM/human tagging → **PUT /data-model/import**.
-3. **Run the scraper** — The BACnet scraper loads points that have `bacnet_device_id` and `object_identifier` from the database and polls only those via diy-bacnet-server.
-
-See [Points](../modeling/points#bacnet-addressing) for the BACnet fields and [Appendix: API Reference](../appendix/api_reference) for endpoints. **Port:** Only one process can use port 47808 (BACnet/IP). For API/UI discovery, diy-bacnet-server is already running.
-
----
-
-## Data acquisition
-
-The BACnet scraper loads points from the DB where `bacnet_device_id` and `object_identifier` are set; groups by device; calls diy-bacnet-server JSON-RPC (present-value) for each; writes `(point_id, ts, value)` to `timeseries_readings`. Throttling depends on how many points are defined and the poll interval. See [Security → Throttling](../security#2-outbound-otbuilding-network-is-paced).
+1. **WhoIs broadcast** — `POST /bacnet/whois_range` returns the responding devices. Each becomes a `:bacnet_device` node with its BACnet instance, IP+port address, and (optionally) vendor/model/firmware from a follow-up `ReadPropertyMultiple`.
+2. **Object enumeration** — `POST /bacnet/point_discovery_to_graph` walks one device's `object-list` property, optionally enriches each entry with `object-name` / `description` / `units`, and writes one `:bacnet_object` node per entry. The `concept_curie` field aligns the object to a Mnemosyne BACnet concept (`mnemo:BacnetAnalogInput` etc.) so downstream graph queries can traverse into Brick / 223P via `equivalentTo` edges.
+3. **Point authoring** — Add `:site`, `:equipment`, and `:point` nodes via the existing CRUD API. Each point's application-layer metadata (Brick class, rule input, unit) stays independent of the BACnet protocol detail.
+4. **Protocol binding** — Link a `:bacnet_object` to a `:point` via `bind_object_to_point(object_id, point_id, bacnet_property='present_value')`. The scraper reads this edge to know what to fetch for which point.
+5. **Scraping** — Every `OFDD_BACNET_SCRAPE_INTERVAL_MIN` minutes, the scraper loads the full plan from Selene, groups by device, issues one RPM per device, and writes samples. A per-device failure is isolated — one flaky device doesn't stall the loop.
 
 ---
 
 ## Configuration
 
-Scraper config comes from **environment** and, when the API uses Bearer auth, from **GET /config** (the React Config page controls the interval).
+See [Configuration](../configuration) for the full list. BACnet-specific knobs:
 
-- **`OFDD_BACNET_ADDRESS`** — BACnet/IP **UDP** bind passed into **diy-bacnet-server** / **bacpypes3** (format like `192.168.1.10/24:47808`: IPv4 prefix, UDP port). This is **only** how the stack listens for BACnet traffic on the OT (or lab) interface. It is **not** the URL the Open-FDD **API** or **bacnet-scraper** use for HTTP JSON-RPC.
-- **`OFDD_BACNET_SERVER_URL`** — Base URL for **HTTP** JSON-RPC to diy-bacnet-server (**port 8080** on the **Docker host** when using the bundled `bacnet-server` with `network_mode: host`). From bridge containers this is normally **`http://host.docker.internal:8080`** (see `stack/docker-compose.yml`). Use a host LAN URL only when hairpin/routing requires it. Host-run tools may use `http://127.0.0.1:8080` instead.
-- **Scrape interval** — When **`OFDD_API_KEY`** is set (e.g. in `stack/.env`), the scraper calls GET /config and uses **`bacnet_scrape_interval_min`** from the data model (Config page). Otherwise it uses **`OFDD_BACNET_SCRAPE_INTERVAL_MIN`** env (default: 5). See [Configuration → Services that read config from the API](../configuration#services-that-read-config-from-the-api-bacnet-scraper).
-- **`OFDD_DB_*`** — TimescaleDB connection
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `OFDD_BACNET_INTERFACE` | `0.0.0.0` | Bind interface for the BACnet/IP UDP socket. |
+| `OFDD_BACNET_PORT` | `47808` | UDP port (ASHRAE 135 standard). |
+| `OFDD_BACNET_BROADCAST_ADDRESS` | `255.255.255.255` | Who-Is broadcast target. Set to the subnet broadcast when needed. |
+| `OFDD_BACNET_APDU_TIMEOUT_MS` | `6000` | APDU timeout for every request the driver issues. |
+| `OFDD_BACNET_DEVICE_INSTANCE` | unset | When set, the driver registers itself as a Device object on the network (required for COV subscriptions and some vendor gateways). |
+| `OFDD_BACNET_SCRAPE_ENABLED` | `true` | Short-circuit flag. Set `false` to idle the scraper without tearing down the container. |
+| `OFDD_BACNET_SCRAPE_INTERVAL_MIN` | `5` | Cadence. Fractional minutes allowed for testing. |

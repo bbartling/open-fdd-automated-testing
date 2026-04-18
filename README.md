@@ -78,7 +78,7 @@ git clone https://github.com/bbartling/open-fdd.git
 
 ### Standard HTTP bootstrap (no TLS) and app login
 
-The `--bacnet-address` value is the static **BACnet/IP (UDP)** bind for **bacpypes3** in diy-bacnet-server (**`OFDD_BACNET_ADDRESS`**, e.g. `192.168.204.18/24:47808`), which is the usual setup on operations technology (OT) LANs. It is **not** the same thing as **`OFDD_BACNET_SERVER_URL`**: the DIY gateway’s HTTP **:8080** listens on the **Docker host**, so the API and scraper default to **`http://host.docker.internal:8080`** (see Compose / `stack/.env`). Bootstrap supports **dual-NIC** hosts: use `--bacnet-address` on the OT interface; your other interface can use DHCP for outbound internet access.
+The BACnet driver is embedded (rusty-bacnet); it binds **BACnet/IP** UDP/47808 directly on the host NIC. `--bacnet-address` resolves to **`OFDD_BACNET_INTERFACE`** (the IPv4 the driver binds on; e.g. `192.168.204.18`). Bootstrap supports **dual-NIC** hosts: use `--bacnet-address` on the OT interface; the other interface can use DHCP for outbound internet access. Set `--bacnet-instance N` to register the driver as a local Device object (required for COV subscriptions).
 
 ```bash
 cd open-fdd-afdd-stack
@@ -93,7 +93,7 @@ printf '%s' 'YourSecurePassword' | ./scripts/bootstrap.sh \
 
 ### Standard hardened stack — self-signed TLS (Caddy) and app login
 
-Open-FDD runs over TLS with self-signed certificates, and there is no access to the Open-FDD API or the DIY BACnet server Docker container APIs.
+Open-FDD runs over TLS with self-signed certificates; the Open-FDD API is locked down behind Caddy.
 
 
 ```bash
@@ -114,7 +114,7 @@ printf '%s' 'YourSecurePassword' | ./scripts/bootstrap.sh \
 ./scripts/bootstrap.sh --verify
 ```
 
-If BACnet shows **API→gateway** timeout, on the host run **`./scripts/smoke_bacnet_api_to_gateway.sh`** (same hop as **`./scripts/bootstrap.sh --verify`**). If **`curl -X POST http://127.0.0.1:8080/server_hello`** with a JSON-RPC body works on the host but the smoke script fails, try **`./scripts/bootstrap.sh --verify --autofix-bacnet`** (opt-in hairpin repair) or set **`OFDD_BACNET_SERVER_URL`** in `stack/.env` per [BACnet overview](docs/bacnet/overview.md) and [OpenClaw + Docker BACnet](docs/howto/openclaw_bacnet_docker_and_human_modeling.md). A bare **GET** to `/server_hello` returns **405**; use **POST** with `{"jsonrpc":"2.0","id":"0","method":"server_hello","params":{}}`.
+If `--verify` shows **BACnet driver FAIL**, the API container can't load or can't respond on `/bacnet/server_hello`. Check `docker logs openfdd_api` for driver import errors; `[bacnet]` extras (rusty-bacnet wheel) must be installed in the image. See [BACnet overview](docs/bacnet/overview.md) for the driver config surface.
 
 Also available is the **partial stack** mode: `./scripts/bootstrap.sh --mode collector`, `--mode model`, or `--mode engine`. See the `Docs` below for more information.
 
