@@ -1,0 +1,229 @@
+{
+  "name": "hvac-fdd",
+  "version": "2.0.0",
+  "description": "HVAC Fault Detection & Diagnostics operational-state schema pack for the Poseidon engine. Covers runtime state: detected faults, energy profiles, suppression groups, annotations, findings, proposals, and per-site config. Vocabulary (equipment kind, point kind) is delegated to the Mnemosyne pack; instance nodes use base :equipment / :point labels from the common pack with a concept_curie property referencing a mnemo:* CURIE.",
+  "depends_on": ["common"],
+  "types": {
+    "fault_rule": {
+      "description": "A fault detection rule definition (built-in or user-defined)",
+      "fields": {
+        "rule_id": "string!",
+        "description": "string!",
+        "severity": "int!",
+        "category": "string!",
+        "energy_impact": "string!",
+        "method": "string = 'rule'",
+        "phase": "int = 1",
+        "required_points": "string",
+        "required_concepts": "string",
+        "condition_json": "string",
+        "climate_sensitivity": "string = 'schedule'",
+        "estimation_method": "string = 'qualitative_only'",
+        "confidence": "string = 'low'",
+        "savings_range": "string",
+        "eem_ref": "string",
+        "applies_to": "string",
+        "applies_to_concept": "string",
+        "source": "string = 'builtin'"
+      }
+    },
+    "fault_event": {
+      "description": "An active or historical fault instance detected by the engine",
+      "fields": {
+        "fault_code": "string!",
+        "severity": "int!",
+        "category": "string!",
+        "state": "string = 'active'",
+        "detected_at": "string!",
+        "cleared_at": "string",
+        "evidence_snapshot": "string",
+        "possible_diagnoses": "string",
+        "suppressed_by": "string",
+        "estimation_method": "string",
+        "confidence": "string",
+        "accumulated_kwh": "float = 0.0",
+        "accumulated_cost_usd": "float = 0.0",
+        "accumulated_co2_kg": "float = 0.0",
+        "scope1_co2_kg": "float = 0.0",
+        "scope2_co2_kg": "float = 0.0",
+        "carbon_cost_usd": "float = 0.0",
+        "tick_count": "int = 0"
+      }
+    },
+    "energy_profile": {
+      "description": "Snapshot of accumulated energy impact over a time window",
+      "fields": {
+        "fault_code": "string!",
+        "equipment_ref": "string!",
+        "window_start": "string!",
+        "window_end": "string!",
+        "energy_kwh": "float!",
+        "cost_usd": "float",
+        "co2_kg": "float",
+        "estimation_method": "string!",
+        "confidence": "string = 'medium'",
+        "climate_zone": "string",
+        "emissions_scope": "string",
+        "factor_source": "string"
+      }
+    },
+    "suppression_group": {
+      "description": "Hierarchical fault suppression group for a fault cluster",
+      "fields": {
+        "name": "string!",
+        "cluster_id": "string",
+        "trigger_rule": "string!",
+        "member_rules": "string",
+        "priority_order": "string"
+      }
+    },
+    "site_config": {
+      "description": "Per-building energy and emissions configuration",
+      "fields": {
+        "name": "string!",
+        "blended_elec_rate": "float",
+        "gas_rate": "float",
+        "climate_zone": "string = '4A'",
+        "annual_operating_hours": "float = 3120.0",
+        "site_latitude": "float",
+        "site_longitude": "float",
+        "grid_region": "string",
+        "emissions_provider": "string",
+        "scope1_fuel_type": "string = 'natural_gas'",
+        "carbon_cost_per_tonne": "float",
+        "egrid_subregion": "string"
+      }
+    },
+    "fault_cluster": {
+      "description": "A cluster of co-occurring faults with a shared root cause",
+      "fields": {
+        "cluster_id": "string!",
+        "name": "string!",
+        "trigger_rule": "string!",
+        "prevalence": "string",
+        "energy_impact": "string",
+        "playbook_ref": "string"
+      }
+    },
+    "remediation_playbook": {
+      "description": "Step-by-step fix workflow for a fault or cluster",
+      "fields": {
+        "playbook_id": "string!",
+        "name": "string!",
+        "fix_type": "string = 'remote'",
+        "fault_codes": "string!",
+        "steps": "string",
+        "estimated_cost": "string",
+        "estimated_time": "string"
+      }
+    },
+    "annotation": {
+      "description": "An annotation attached to a fault event: finding, note, observation, or resolution",
+      "fields": {
+        "text": "string!",
+        "annotation_type": "string = 'note'",
+        "fault_code": "string!",
+        "equipment_id": "int!",
+        "created_at": "string!"
+      }
+    },
+    "finding": {
+      "description": "A diagnostic finding linked to faults and equipment for institutional knowledge",
+      "fields": {
+        "title": "string!",
+        "description": "string!",
+        "severity": "int = 3",
+        "created_at": "string!"
+      }
+    },
+    "proposal": {
+      "description": "A control action proposal (setpoint change, override, schedule exception) pending operator approval",
+      "fields": {
+        "proposal_type": "string!",
+        "equipment_id": "int",
+        "equipment_name": "string",
+        "point_ref": "string",
+        "proposed_value": "float",
+        "current_value": "float",
+        "override_value": "float",
+        "priority": "int",
+        "exception_type": "string",
+        "exception_start": "string",
+        "exception_end": "string",
+        "reason": "string!",
+        "status": "string = 'pending'",
+        "duration_hours": "float",
+        "created_at": "string!"
+      }
+    }
+  },
+  "relationships": {
+    "hasFault": {
+      "description": "Equipment has an active or historical fault event",
+      "source": ["equipment"],
+      "target": ["fault_event"]
+    },
+    "boundToRule": {
+      "description": "Equipment instance is bound to a fault detection rule",
+      "source": ["equipment"],
+      "target": ["fault_rule"],
+      "fields": {
+        "bound_at": "string",
+        "point_mapping": "string"
+      }
+    },
+    "hasEnergyProfile": {
+      "description": "Fault event has an accumulated energy impact snapshot",
+      "source": ["fault_event"],
+      "target": ["energy_profile"]
+    },
+    "suppressedBy": {
+      "description": "Fault event is suppressed by a higher-priority root-cause fault",
+      "source": ["fault_event"],
+      "target": ["fault_event"]
+    },
+    "triggeredBy": {
+      "description": "Fault cluster triggered by its root-cause rule",
+      "source": ["fault_cluster"],
+      "target": ["fault_rule"]
+    },
+    "memberOf": {
+      "description": "Fault rule is a member of a fault cluster",
+      "source": ["fault_rule"],
+      "target": ["fault_cluster"]
+    },
+    "hasPlaybook": {
+      "description": "Fault cluster or rule links to its remediation playbook",
+      "source": ["fault_cluster", "fault_rule"],
+      "target": ["remediation_playbook"]
+    },
+    "configuredBy": {
+      "description": "Equipment or building configured by a site config",
+      "source": ["building", "site"],
+      "target": ["site_config"]
+    },
+    "hasAnnotation": {
+      "description": "Fault event has an attached annotation",
+      "source": ["fault_event"],
+      "target": ["annotation"]
+    },
+    "relatedToFault": {
+      "description": "Finding is related to a fault event",
+      "source": ["finding"],
+      "target": ["fault_event"]
+    },
+    "relatedToEquipment": {
+      "description": "Finding is related to an equipment instance",
+      "source": ["finding"],
+      "target": ["equipment"]
+    },
+    "hasConcept": {
+      "description": "Instance node is an instance of a Mnemosyne concept. Denormalized alongside concept_curie: the property enables fast filter queries, the edge enables concept-graph traversal (subClassOf / equivalentTo walks).",
+      "source": ["equipment", "point", "zone", "space", "building", "floor", "site"],
+      "target": ["mnemosyne_concept"],
+      "fields": {
+        "bound_at": "string"
+      }
+    }
+  }
+}

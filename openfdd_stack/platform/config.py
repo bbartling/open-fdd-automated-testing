@@ -102,6 +102,20 @@ class PlatformSettings(BaseSettings):
     # Reserved for RDF overlay compatibility (always "disabled" in core builds).
     ai_backend: str = "disabled"
 
+    # SeleneDB migration (Phase 1, strangler flag). Default "timescale" preserves
+    # existing behavior; flip to "selene" per-surface as migration phases land.
+    # See graph Decision D1 (node 10172) and Milestone 10167.
+    storage_backend: str = "timescale"
+    selene_url: str = "http://selene:8080"
+    selene_identity: Optional[str] = None
+    selene_secret: Optional[str] = None
+    selene_timeout_sec: float = 10.0
+    # Directory of pinned schema pack JSONs (relative to repo root or absolute).
+    selene_schema_pack_dir: str = "config/schema_packs"
+    # Registration order (pack filenames without extension). Dependencies resolve
+    # left-to-right; unlisted packs run last in filesystem order.
+    selene_pack_order: str = "hvac-fdd,bacnet-driver"
+
     model_config = {"env_prefix": "OFDD_", "env_file": ".env"}
 
 

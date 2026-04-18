@@ -142,6 +142,37 @@ services:
       driver: json-file
       options: *log-opts
 
+  # SeleneDB — graph + time-series + vector + RDF in one runtime (Phase 1, opt-in).
+  # Starts under `--profile selene`; activate via bootstrap --with-selene (to be added) or
+  # `docker compose --profile selene up`. Default stack still runs against TimescaleDB
+  # until the strangler flag (OFDD_STORAGE_BACKEND=selene) is flipped and data-path
+  # migration phases 2–3 land. See graph Milestone 10167.
+  selene:
+    profiles:
+      - selene
+    image: ghcr.io/jscott3201/selenedb:v1.0.0
+    container_name: openfdd_selene
+    # Loopback-bound until Phase 4. QUIC (4510/udp) exposed for future federation.
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:4510:4510/udp"
+    environment:
+      # Dev mode keeps the built-in admin context active so the stack can connect
+      # without managing vault credentials in Phase 1. Tighten when Phase 4 hardens auth.
+      SELENE_DEV_MODE: "${SELENE_DEV_MODE:-true}"
+    volumes:
+      - selene_data:/var/lib/selene
+    healthcheck:
+      test: ["CMD", "/selene-cli", "health", "--addr", "127.0.0.1:8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: *log-opts
+
   db:
     image: timescale/timescaledb:latest-pg16
     container_name: openfdd_timescale
@@ -405,3 +436,4 @@ volumes:
   openfdd_db:
   grafana_data:
   frontend_node_modules:
+  selene_data:
