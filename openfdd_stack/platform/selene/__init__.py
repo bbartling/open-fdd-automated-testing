@@ -25,10 +25,13 @@ from openfdd_stack.platform.selene.graph_config import (
 from openfdd_stack.platform.selene.graph_crud import (
     EQUIPMENT_LABEL,
     EXTERNAL_ID_PROP,
+    POINT_LABEL,
     SITE_LABEL,
     delete_equipment,
+    delete_point,
     delete_site,
     upsert_equipment,
+    upsert_point,
     upsert_site,
 )
 from openfdd_stack.platform.selene.naming import (
@@ -50,11 +53,14 @@ __all__ = [
     "make_selene_client_from_settings",
     "SITE_LABEL",
     "EQUIPMENT_LABEL",
+    "POINT_LABEL",
     "EXTERNAL_ID_PROP",
     "upsert_site",
     "delete_site",
     "upsert_equipment",
     "delete_equipment",
+    "upsert_point",
+    "delete_point",
     "canonical_name",
     "canonical_bas_path",
     "is_canonical",
