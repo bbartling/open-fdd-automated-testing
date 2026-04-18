@@ -41,7 +41,7 @@ import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from openfdd_stack.platform.bacnet import (
     BacnetDriver,
@@ -89,24 +89,28 @@ def _make_bip_transport() -> BipTransport:
 # ---------------------------------------------------------------------------
 
 
-def _error_body(exc: BacnetError) -> dict[str, Any]:
-    """Flatten a BacnetError into a JSON payload the frontend can render.
+def _error_body(exc: BacnetError, *, code: str = "BACNET_ERROR") -> dict[str, Any]:
+    """Build the stack's uniform ``{code, message, details}`` error envelope.
 
-    Keeps the ``error_class`` / ``error_code`` / ``reason`` fields on
-    the outer object (not nested under ``details``) so existing
-    frontend code that reads ``response.error.message`` still works.
+    ``main._error_detail_from_http_exc`` reads these three keys and
+    drops anything else, so BACnet-specific structured context
+    (error_class / error_code / reject reason / abort reason) has to
+    live under ``details`` to reach the client.
     """
-    body: dict[str, Any] = {
-        "error": type(exc).__name__,
-        "message": str(exc),
-    }
+    details: dict[str, Any] = {"error_type": type(exc).__name__}
     if isinstance(exc, BacnetProtocolError):
-        body["error_class"] = exc.error_class
-        body["error_code"] = exc.error_code
+        if exc.error_class is not None:
+            details["error_class"] = exc.error_class
+        if exc.error_code is not None:
+            details["error_code"] = exc.error_code
     reason = getattr(exc, "reason", None)
     if reason is not None:
-        body["reason"] = reason
-    return body
+        details["reason"] = reason
+    return {
+        "code": code,
+        "message": str(exc),
+        "details": details,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -114,11 +118,11 @@ def _error_body(exc: BacnetError) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-# Maps the hyphenated BACnet "kebab" naming (``"analog-input"``) that the
-# diy-bacnet-server API used to rusty-bacnet's CamelCase ObjectType repr
-# (``"AnalogInput"``). Keeps the frontend's string identifiers working
-# without a frontend change.
-_KEBAB_TO_OBJECT_TYPE: dict[str, str] = {
+# Canonical long-form kebab identifiers accepted on input *and* emitted on
+# responses. ``repr(ObjectType.X)`` in rusty-bacnet drops word-internal
+# caps (``CHARACTERSTRING_VALUE`` → ``CharacterstringValue``), so the
+# CamelCase values here match what the transport produces.
+_CANONICAL_KEBAB_TO_OBJECT_TYPE: dict[str, str] = {
     "analog-input": "AnalogInput",
     "analog-output": "AnalogOutput",
     "analog-value": "AnalogValue",
@@ -147,33 +151,92 @@ _KEBAB_TO_OBJECT_TYPE: dict[str, str] = {
     "program": "Program",
 }
 
-# Inverse — emitted on responses so the frontend sees the same string
-# format it sent in.
-_OBJECT_TYPE_TO_KEBAB: dict[str, str] = {v: k for k, v in _KEBAB_TO_OBJECT_TYPE.items()}
+# Short-form aliases that the stack / tests / scripts have used
+# historically (``ai,1`` / ``bo,3``). Accepted on input only — responses
+# always emit the long form so the wire shape stays predictable.
+_KEBAB_SHORT_ALIASES: dict[str, str] = {
+    "ai": "AnalogInput",
+    "ao": "AnalogOutput",
+    "av": "AnalogValue",
+    "bi": "BinaryInput",
+    "bo": "BinaryOutput",
+    "bv": "BinaryValue",
+    "mi": "MultiStateInput",
+    "mo": "MultiStateOutput",
+    "mv": "MultiStateValue",
+}
+
+_KEBAB_TO_OBJECT_TYPE: dict[str, str] = {
+    **_CANONICAL_KEBAB_TO_OBJECT_TYPE,
+    **_KEBAB_SHORT_ALIASES,
+}
+
+# Inverse built from the canonical map only, so ``AnalogInput`` always
+# renders as ``analog-input`` (never ``ai``) on response bodies.
+_OBJECT_TYPE_TO_KEBAB: dict[str, str] = {
+    v: k for k, v in _CANONICAL_KEBAB_TO_OBJECT_TYPE.items()
+}
 
 
 def _parse_object_identifier(oid: str) -> tuple[str, int]:
-    """Parse ``"analog-input,1"`` → ``("AnalogInput", 1)``.
+    """Parse ``"analog-input,1"`` (or ``"ai,1"``) → ``("AnalogInput", 1)``.
 
-    Raises ``HTTPException(400)`` on malformed input so the frontend
-    sees a structured error instead of a 500 backtrace.
+    Raises ``HTTPException(400)`` with structured detail on malformed
+    input so the frontend sees a usable error instead of a 500
+    backtrace.
     """
     if "," not in oid:
-        raise HTTPException(400, f"invalid object_identifier: {oid!r}")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "BACNET_INVALID",
+                "message": f"invalid object_identifier: {oid!r}",
+                "details": {"object_identifier": oid},
+            },
+        )
     kebab_type, _, instance_str = oid.partition(",")
     object_type = _KEBAB_TO_OBJECT_TYPE.get(kebab_type.strip().lower())
     if object_type is None:
-        raise HTTPException(400, f"unknown object type: {kebab_type!r}")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "BACNET_INVALID",
+                "message": f"unknown object type: {kebab_type!r}",
+                "details": {"object_type": kebab_type},
+            },
+        )
     try:
         instance = int(instance_str.strip())
     except ValueError as exc:
-        raise HTTPException(400, f"invalid object instance: {instance_str!r}") from exc
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "BACNET_INVALID",
+                "message": f"invalid object instance: {instance_str!r}",
+                "details": {"object_instance": instance_str},
+            },
+        ) from exc
     return object_type, instance
 
 
 def _format_object_identifier(object_type: str, instance: int) -> str:
-    """Inverse of :func:`_parse_object_identifier` for response bodies."""
+    """Inverse of :func:`_parse_object_identifier` for response bodies.
+
+    Always emits the long canonical form (``"analog-input,1"``) even
+    when the input used a short alias.
+    """
     return f"{_OBJECT_TYPE_TO_KEBAB.get(object_type, object_type.lower())},{instance}"
+
+
+def _normalize_property_name(name: str) -> str:
+    """Accept legacy hyphenated property names (``"present-value"``) as
+    well as underscore form (``"present_value"``).
+
+    Keeps the rest of the repo working — ``platform/drivers/bacnet.py``
+    and ``platform/data_model_ttl.py`` use the hyphenated form, and the
+    frontend sends the hyphenated form from earlier API contracts.
+    """
+    return name.strip().lower().replace("-", "_")
 
 
 # ---------------------------------------------------------------------------
@@ -218,13 +281,39 @@ class PointDiscoveryToGraphBody(PointDiscoveryBody):
     route's distinct Swagger summary + frontend-visible schema name."""
 
 
+def _unwrap_request_wrapper(data: Any) -> Any:
+    """Accept the legacy ``{"request": {...}}`` envelope as-is.
+
+    The prior JSON-RPC proxy required payloads wrapped in a ``request``
+    field (``{"request": {"device_instance": ..., ...}}``). The flat
+    form (``{"device_instance": ..., ...}``) is the new canonical
+    shape, but unwrapping lets frontend / scripts keep sending either
+    while the migration lands.
+    """
+    if (
+        isinstance(data, dict)
+        and "request" in data
+        and isinstance(data["request"], dict)
+    ):
+        return data["request"]
+    return data
+
+
 class ReadPropertyBody(BaseModel):
     device_instance: int = Field(..., ge=0, le=4194303)
     object_identifier: str = Field(..., description="e.g. ``analog-input,1``")
     property_identifier: str = Field(
         "present_value",
-        description="One of: ``present_value``, ``object_name``, ``description``, ``units``.",
+        description=(
+            "BACnet property. Hyphenated (``present-value``) and underscored "
+            "(``present_value``) forms both accepted."
+        ),
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _unwrap(cls, data: Any) -> Any:
+        return _unwrap_request_wrapper(data)
 
 
 class ReadMultipleItem(BaseModel):
@@ -235,6 +324,11 @@ class ReadMultipleItem(BaseModel):
 class ReadMultipleBody(BaseModel):
     device_instance: int = Field(..., ge=0, le=4194303)
     requests: list[ReadMultipleItem]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _unwrap(cls, data: Any) -> Any:
+        return _unwrap_request_wrapper(data)
 
 
 class WritePropertyBody(BaseModel):
@@ -251,6 +345,11 @@ class WritePropertyBody(BaseModel):
         le=16,
         description="BACnet priority slot (1–16). Required for every write/release.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _unwrap(cls, data: Any) -> Any:
+        return _unwrap_request_wrapper(data)
 
 
 # ---------------------------------------------------------------------------
@@ -417,7 +516,7 @@ async def bacnet_read_property(body: Annotated[ReadPropertyBody, Body()]):
         PropertyRead(
             object_type=object_type,
             object_instance=object_instance,
-            property=body.property_identifier,
+            property=_normalize_property_name(body.property_identifier),
         )
     ]
     result = await _read_once(body.device_instance, reads)
@@ -438,7 +537,7 @@ async def bacnet_read_multiple(body: Annotated[ReadMultipleBody, Body()]):
             PropertyRead(
                 object_type=object_type,
                 object_instance=object_instance,
-                property=item.property_identifier,
+                property=_normalize_property_name(item.property_identifier),
             )
         )
     results = await _read_once(body.device_instance, reads)
@@ -459,6 +558,7 @@ async def bacnet_write_property(body: Annotated[WritePropertyBody, Body()]):
     relinquish the slot.
     """
     object_type, object_instance = _parse_object_identifier(body.object_identifier)
+    property_name = _normalize_property_name(body.property_identifier)
     try:
         async with _make_bip_transport() as tx:
             resolved = await _resolve_device(tx, body.device_instance)
@@ -466,14 +566,16 @@ async def bacnet_write_property(body: Annotated[WritePropertyBody, Body()]):
                 resolved,
                 object_type,
                 object_instance,
-                body.property_identifier,
+                property_name,
                 body.value,
                 priority=body.priority,
             )
     except BacnetDriverError as exc:
         # Validation-class failure → 400 so the frontend can render
         # "fix your input" instead of "talk to your network admin".
-        raise HTTPException(status_code=400, detail=_error_body(exc)) from exc
+        raise HTTPException(
+            status_code=400, detail=_error_body(exc, code="BACNET_INVALID")
+        ) from exc
     except BacnetError as exc:
         raise HTTPException(status_code=502, detail=_error_body(exc)) from exc
 
@@ -508,7 +610,11 @@ async def _resolve_device(tx: BipTransport, device_instance: int) -> DiscoveredD
     if not devices:
         raise HTTPException(
             status_code=404,
-            detail={"error": "DeviceNotFound", "device_instance": device_instance},
+            detail={
+                "code": "DEVICE_NOT_FOUND",
+                "message": f"BACnet device {device_instance} did not respond to Who-Is",
+                "details": {"device_instance": device_instance},
+            },
         )
     return devices[0]
 

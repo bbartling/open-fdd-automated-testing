@@ -213,7 +213,7 @@ class Transport(ABC):
         object_type: str,
         object_instance: int,
         property_name: str,
-        value: float | int | bool | str,
+        value: float | int | bool | str | None,
         *,
         priority: int | None = None,
     ) -> None:
@@ -222,9 +222,10 @@ class Transport(ABC):
         ``value`` is a Python scalar — transports translate to the
         matching BACnet PropertyValue variant (real / unsigned /
         boolean / …) using ``object_type`` + ``property_name`` to pick
-        the right tag. ``priority`` is the BACnet priority slot
-        (1-16); ``None`` writes without priority (some objects) or to
-        the default slot. ``value=None`` writes NULL to relinquish.
+        the right tag. Pass ``None`` to write NULL (relinquishes a
+        commandable slot). ``priority`` is the BACnet priority slot
+        (1-16); ``None`` writes without priority (some objects) or
+        to the default slot.
 
         Raises :class:`BacnetError` subclasses on protocol failure —
         unlike the batch read path, a single-write failure is fatal

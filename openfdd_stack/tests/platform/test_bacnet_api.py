@@ -457,6 +457,102 @@ def test_write_property_requires_priority():
     assert r.status_code == 422  # FastAPI validation error
 
 
+def test_read_property_accepts_legacy_request_wrapper(monkeypatch: pytest.MonkeyPatch):
+    """The pre-2.5c JSON-RPC shape ``{"request": {...}}`` still works."""
+    _patch_selene_noop(monkeypatch)
+    device = DiscoveredDevice(device_instance=100, address="10.0.0.100:47808")
+    tx = _StubTransport(
+        devices=[device],
+        read_results=[
+            PropertyReadResult(
+                object_type="AnalogInput",
+                object_instance=1,
+                property="present_value",
+                value=21.3,
+            ),
+        ],
+    )
+    _patch_transport(monkeypatch, tx)
+
+    r = client.post(
+        "/bacnet/read_property",
+        json={
+            "request": {
+                "device_instance": 100,
+                "object_identifier": "analog-input,1",
+                "property_identifier": "present-value",  # hyphenated too
+            }
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["result"]["value"] == 21.3
+
+
+def test_read_property_accepts_short_form_object_identifier(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Short forms like ``"ai,1"`` map to AnalogInput on input."""
+    _patch_selene_noop(monkeypatch)
+    device = DiscoveredDevice(device_instance=100, address="10.0.0.100:47808")
+    tx = _StubTransport(
+        devices=[device],
+        read_results=[
+            PropertyReadResult(
+                object_type="AnalogInput",
+                object_instance=3,
+                property="present_value",
+                value=55.5,
+            ),
+        ],
+    )
+    _patch_transport(monkeypatch, tx)
+
+    r = client.post(
+        "/bacnet/read_property",
+        json={
+            "device_instance": 100,
+            "object_identifier": "ai,3",  # short form
+        },
+    )
+    assert r.status_code == 200
+    # Response emits the canonical long form regardless of input.
+    assert r.json()["result"]["object_identifier"] == "analog-input,3"
+
+
+def test_whois_range_error_wrapped_in_uniform_envelope(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Errors carry ``{code, message, details}`` so frontend sees structure."""
+    _patch_selene_noop(monkeypatch)
+    tx = _StubTransport(discover_raises=BacnetTimeoutError("socket timeout"))
+    _patch_transport(monkeypatch, tx)
+
+    r = client.post("/bacnet/whois_range", json={})
+    assert r.status_code == 502
+    body = r.json()
+    err = body["error"]
+    assert err["code"] == "BACNET_ERROR"
+    assert "socket timeout" in err["message"]
+    assert err["details"]["error_type"] == "BacnetTimeoutError"
+
+
+def test_point_discovery_404_carries_device_instance_in_details(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _patch_selene_noop(monkeypatch)
+    tx = _StubTransport(devices=[])
+    _patch_transport(monkeypatch, tx)
+
+    r = client.post(
+        "/bacnet/point_discovery",
+        json={"instance": {"device_instance": 9999}},
+    )
+    assert r.status_code == 404
+    err = r.json()["error"]
+    assert err["code"] == "DEVICE_NOT_FOUND"
+    assert err["details"]["device_instance"] == 9999
+
+
 def test_write_property_bacnet_error_becomes_502(monkeypatch: pytest.MonkeyPatch):
     _patch_selene_noop(monkeypatch)
     device = DiscoveredDevice(device_instance=100, address="10.0.0.100:47808")
