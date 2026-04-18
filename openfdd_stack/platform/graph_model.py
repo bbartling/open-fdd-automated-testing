@@ -173,8 +173,50 @@ def _ensure_graph() -> Any:
         return _graph
 
 
+def _use_selene_backend() -> bool:
+    """True when OFDD_STORAGE_BACKEND=selene; callers short-circuit the rdflib path."""
+    return getattr(get_platform_settings(), "storage_backend", "timescale") == "selene"
+
+
+def _selene_config_store():
+    """Build a Selene config store + client; caller is responsible for closing."""
+    from openfdd_stack.platform.selene import (
+        SeleneConfigStore,
+        make_selene_client_from_settings,
+    )
+
+    client = make_selene_client_from_settings()
+    return SeleneConfigStore(client), client
+
+
 def get_config_from_graph() -> dict:
-    """Read platform config from in-memory graph (ofdd:platform_config triples). Returns dict of snake_case keys."""
+    """Read platform config from in-memory graph (ofdd:platform_config triples). Returns dict of snake_case keys.
+
+    With ``OFDD_STORAGE_BACKEND=selene``, reads the ``ofdd_platform_config``
+    node from SeleneDB instead. Failures are logged and degrade to ``{}`` so
+    boot is not blocked by transient Selene unavailability \u2014 the caller
+    (``config.get_platform_settings``) treats this as "no overlay" and falls
+    back to env / code defaults.
+    """
+    if _use_selene_backend():
+        from openfdd_stack.platform.selene.exceptions import SeleneError
+
+        try:
+            store, client = _selene_config_store()
+            try:
+                return store.read_config()
+            finally:
+                client.close()
+        except SeleneError as exc:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "selene read_config failed (%s); returning empty overlay so "
+                "env defaults apply. Stack continues.",
+                exc,
+            )
+            return {}
+
     from rdflib import Literal, Namespace, URIRef
 
     g = _ensure_graph()
@@ -198,7 +240,20 @@ def get_config_from_graph() -> dict:
 
 
 def set_config_in_graph(config: dict) -> None:
-    """Write platform config into in-memory graph (ofdd:platform_config). Removes existing config triples first."""
+    """Write platform config into in-memory graph (ofdd:platform_config). Removes existing config triples first.
+
+    With ``OFDD_STORAGE_BACKEND=selene``, upserts the ``ofdd_platform_config``
+    node in SeleneDB. Raises on failure \u2014 unlike reads, writes must be
+    observable to the caller (PUT /config contract).
+    """
+    if _use_selene_backend():
+        store, client = _selene_config_store()
+        try:
+            store.write_config(config)
+        finally:
+            client.close()
+        return
+
     from rdflib import Literal, Namespace, URIRef
 
     g = _ensure_graph()
@@ -233,7 +288,17 @@ def set_config_in_graph(config: dict) -> None:
 
 
 def load_from_file() -> None:
-    """Load unified data_model.ttl into in-memory graph on boot (Brick + BACnet + config)."""
+    """Load unified data_model.ttl into in-memory graph on boot (Brick + BACnet + config).
+
+    With ``OFDD_STORAGE_BACKEND=selene``, the graph lives in SeleneDB and is
+    populated via schema-pack registration (Phase 1) + CRUD writes (later
+    phases). Nothing to load from a TTL file; return early. The ofdd config
+    node is seeded on first write via ``get_platform_settings()`` +
+    ``set_config_overlay()``.
+    """
+    if _use_selene_backend():
+        return
+
     path = _get_ttl_path()
     g = _ensure_graph()
     with _graph_lock:
@@ -277,11 +342,7 @@ def _purge_dangling_blank_nodes(g: Any) -> None:
     while True:
         object_bnodes = {o for _, _, o in g if isinstance(o, BNode)}
         dangling_subjects = tuple(
-            {
-                s
-                for s, _, _ in g
-                if isinstance(s, BNode) and s not in object_bnodes
-            }
+            {s for s, _, _ in g if isinstance(s, BNode) and s not in object_bnodes}
         )
         if not dangling_subjects:
             break
@@ -410,8 +471,19 @@ def write_ttl_to_file() -> tuple[bool, str | None]:
     Returns (success, error_message). Updates health state.
     If the configured path is not writable (e.g. missing mount in container),
     tries /tmp/open_fdd_data_model.ttl so the in-memory graph is at least persisted.
+
+    With ``OFDD_STORAGE_BACKEND=selene``, SeleneDB owns durability via its own
+    WAL + snapshots; there's no TTL file to write. Returns success with no
+    error so callers (lifespan, sync loop) don't misreport health.
     """
     global _last_serialization_ok, _last_serialization_error, _last_serialization_at
+    if _use_selene_backend():
+        with _serialization_lock:
+            _last_serialization_ok = True
+            _last_serialization_error = None
+            _last_serialization_at = datetime.now(timezone.utc)
+        return True, None
+
     ttl = serialize_to_ttl()
     path = _get_ttl_path()
 
@@ -537,7 +609,14 @@ def _sync_loop() -> None:
 
 
 def start_sync_thread() -> None:
-    """Start background thread that serializes graph to file periodically."""
+    """Start background thread that serializes graph to file periodically.
+
+    No-op when ``OFDD_STORAGE_BACKEND=selene`` \u2014 SeleneDB handles persistence
+    internally so there's no in-process graph to sync.
+    """
+    if _use_selene_backend():
+        return
+
     global _sync_thread
     if _sync_thread is not None and _sync_thread.is_alive():
         return

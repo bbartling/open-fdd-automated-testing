@@ -17,6 +17,11 @@ from openfdd_stack.platform.selene.exceptions import (
     SeleneQueryError,
     SeleneValidationError,
 )
+from openfdd_stack.platform.selene.graph_config import (
+    SELENE_CONFIG_LABEL,
+    SeleneConfigStore,
+    make_selene_client_from_settings,
+)
 
 __all__ = [
     "SeleneClient",
@@ -26,4 +31,7 @@ __all__ = [
     "SeleneNotFound",
     "SeleneQueryError",
     "SeleneValidationError",
+    "SeleneConfigStore",
+    "SELENE_CONFIG_LABEL",
+    "make_selene_client_from_settings",
 ]
