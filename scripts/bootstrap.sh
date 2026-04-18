@@ -20,6 +20,7 @@
 #   ./scripts/bootstrap.sh --maintenance        # safe prune only (NO volumes)
 #   ./scripts/bootstrap.sh --build api ...      # rebuild and restart only selected services
 #   (Available services: api, bacnet-server, bacnet-scraper, caddy, db, fdd-loop, frontend, grafana [--with-grafana], host-stats, mosquitto [--with-mqtt-bridge], weather-scraper)
+#   ./scripts/bootstrap.sh --build mcp-rag     # rebuild and restart only mcp-rag service
 #   ./scripts/bootstrap.sh --frontend          # before start: stop frontend, remove frontend node_modules volume (fresh npm install on next up)
 #   ./scripts/bootstrap.sh --reset-data        # delete all sites via API + POST /data-model/reset (testing)
 #
