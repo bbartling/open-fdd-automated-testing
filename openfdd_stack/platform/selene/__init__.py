@@ -31,6 +31,11 @@ from openfdd_stack.platform.selene.graph_crud import (
     upsert_equipment,
     upsert_site,
 )
+from openfdd_stack.platform.selene.naming import (
+    canonical_bas_path,
+    canonical_name,
+    is_canonical,
+)
 
 __all__ = [
     "SeleneClient",
@@ -50,4 +55,7 @@ __all__ = [
     "delete_site",
     "upsert_equipment",
     "delete_equipment",
+    "canonical_name",
+    "canonical_bas_path",
+    "is_canonical",
 ]

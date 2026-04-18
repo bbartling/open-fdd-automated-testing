@@ -23,6 +23,7 @@ from uuid import UUID
 
 from openfdd_stack.platform.selene.client import SeleneClient
 from openfdd_stack.platform.selene.exceptions import SeleneError
+from openfdd_stack.platform.selene.naming import canonical_name
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +161,21 @@ def _delete_by_external_id(
         return False
 
 
+def _canonical_name_pair(raw: Any) -> tuple[str, str | None]:
+    """Return ``(canonical, display_or_None)`` for an instance name.
+
+    Every CRUD write produces a canonical ``name`` per the
+    selenepack-smartbuildings convention (lowercase-kebab ASCII, ``/``
+    paths). The BAS-native label lives in ``display_name`` \u2014 populated
+    only when it actually differs from the canonical form so we don't
+    store redundant info (``"ahu-1"`` / ``"ahu-1"``).
+    """
+    raw_str = "" if raw is None else str(raw).strip()
+    canonical = canonical_name(raw_str)
+    display = raw_str if raw_str and raw_str != canonical else None
+    return canonical, display
+
+
 def _flatten_metadata(metadata: Any) -> str | None:
     """Serialize a metadata field to a string for Selene's flat property model.
 
@@ -186,10 +202,13 @@ def _flatten_metadata(metadata: Any) -> str | None:
 def _site_properties(row: dict[str, Any]) -> dict[str, Any]:
     """Flatten a Postgres sites row to the Selene node property shape."""
     metadata = _flatten_metadata(row.get("metadata"))
+    canonical, display = _canonical_name_pair(row.get("name"))
     props: dict[str, Any] = {
         EXTERNAL_ID_PROP: str(row["id"]),
-        "name": row.get("name") or "",
+        "name": canonical,
     }
+    if display:
+        props["display_name"] = display
     if row.get("description"):
         props["description"] = row["description"]
     if metadata:
@@ -233,10 +252,13 @@ def _equipment_properties(row: dict[str, Any]) -> dict[str, Any]:
     property keeps this slice focused on node-level parity.
     """
     metadata = _flatten_metadata(row.get("metadata"))
+    canonical, display = _canonical_name_pair(row.get("name"))
     props: dict[str, Any] = {
         EXTERNAL_ID_PROP: str(row["id"]),
-        "name": row.get("name") or "",
+        "name": canonical,
     }
+    if display:
+        props["display_name"] = display
     if row.get("site_id"):
         props["site_external_id"] = str(row["site_id"])
     if row.get("description"):
