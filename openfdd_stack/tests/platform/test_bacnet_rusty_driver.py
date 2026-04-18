@@ -130,6 +130,32 @@ class FakeTransport(Transport):
             for r in reads
         ]
 
+    async def write_property(
+        self,
+        device: DiscoveredDevice,
+        object_type: str,
+        object_instance: int,
+        property_name: str,
+        value,
+        *,
+        priority: int | None = None,
+    ) -> None:
+        # Discover-path tests never call this; satisfying the ABC is
+        # enough. The API-layer tests use their own stub.
+        self.calls.append(
+            (
+                "write_property",
+                (
+                    device.device_instance,
+                    object_type,
+                    object_instance,
+                    property_name,
+                    value,
+                    priority,
+                ),
+            )
+        )
+
 
 # ---------------------------------------------------------------------------
 # Selene mock — tracks which nodes + edges got created

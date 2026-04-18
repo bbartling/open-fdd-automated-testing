@@ -37,24 +37,15 @@ import pytest
 
 pytest.importorskip("pydantic_settings")
 
-from openfdd_stack.platform.api.bacnet import _effective_bacnet_server_url
 from openfdd_stack.platform.api.config import get_config
 from openfdd_stack.platform.config import get_platform_settings, set_config_overlay
 
-
-def test_effective_bacnet_url_matches_get_platform_settings(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Default gateway URL resolution must agree between BACnet proxy and merged settings."""
-    monkeypatch.setenv("OFDD_BACNET_SERVER_URL", "http://gateway-contract.test:8080")
-    set_config_overlay({"bacnet_server_url": "http://localhost:8080"})
-    try:
-        s = get_platform_settings()
-        assert s.bacnet_server_url == "http://gateway-contract.test:8080"
-        assert _effective_bacnet_server_url() == s.bacnet_server_url
-    finally:
-        set_config_overlay({})
-        monkeypatch.delenv("OFDD_BACNET_SERVER_URL", raising=False)
+# Note: the historical ``_effective_bacnet_server_url`` contract test
+# (BACnet proxy URL resolution) was removed when the JSON-RPC proxy
+# path retired in slice 2.5c. The env-wins-over-graph invariant is
+# still covered by
+# ``test_get_config_display_overrides_graph_bacnet_url_with_env``
+# below, which exercises the same precedence at the /config layer.
 
 
 def test_get_config_display_overrides_graph_bacnet_url_with_env(
