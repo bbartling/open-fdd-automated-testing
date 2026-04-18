@@ -114,7 +114,7 @@ printf '%s' 'YourSecurePassword' | ./scripts/bootstrap.sh \
 ./scripts/bootstrap.sh --verify
 ```
 
-If BACnet shows **API→gateway** timeout but **`curl http://127.0.0.1:8080/server_hello`** works on the host, try **`./scripts/bootstrap.sh --verify --autofix-bacnet`** (opt-in hairpin repair) or set **`OFDD_BACNET_SERVER_URL`** in `stack/.env` per [BACnet overview](docs/bacnet/overview.md).
+If BACnet shows **API→gateway** timeout, on the host run **`./scripts/smoke_bacnet_api_to_gateway.sh`** (same hop as **`./scripts/bootstrap.sh --verify`**). If **`curl -X POST http://127.0.0.1:8080/server_hello`** with a JSON-RPC body works on the host but the smoke script fails, try **`./scripts/bootstrap.sh --verify --autofix-bacnet`** (opt-in hairpin repair) or set **`OFDD_BACNET_SERVER_URL`** in `stack/.env` per [BACnet overview](docs/bacnet/overview.md) and [OpenClaw + Docker BACnet](docs/howto/openclaw_bacnet_docker_and_human_modeling.md). A bare **GET** to `/server_hello` returns **405**; use **POST** with `{"jsonrpc":"2.0","id":"0","method":"server_hello","params":{}}`.
 
 Also available is the **partial stack** mode: `./scripts/bootstrap.sh --mode collector`, `--mode model`, or `--mode engine`. See the `Docs` below for more information.
 

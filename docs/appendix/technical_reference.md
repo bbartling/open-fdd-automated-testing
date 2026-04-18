@@ -35,7 +35,7 @@ open-fdd/
 │   ├── grafana/           # provisioning/datasources, optional dashboards
 │   └── caddy/             # Caddy only: [`stack/caddy/Caddyfile`](../../stack/caddy/Caddyfile) (minimal rev proxy; hardening TBD — [Security](../security))
 ├── config/                # data_model.ttl (Brick + BACnet + platform config)
-├── scripts/               # bootstrap.sh, fake_*_faults.py
+├── scripts/               # bootstrap.sh; smoke_bacnet_api_to_gateway.sh (API→gateway); fake_*_faults.py
 ├── tools/
 │   ├── discover_bacnet.py # Optional: BACnet discovery helper (bacpypes3); stack scrape is KG-driven
 │   ├── run_weather_fetch.py, run_rule_loop.py, run_host_stats.py  # BACnet: python -m openfdd_stack.platform.drivers.run_bacnet_scrape

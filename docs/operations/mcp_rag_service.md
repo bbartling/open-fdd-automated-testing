@@ -16,7 +16,7 @@ Open-FDD can run an optional MCP-style retrieval service derived from canonical 
 
 Never edit index artifacts as source-of-truth documentation.
 
-**OpenClaw + BACnet + UI modeling:** keep [OpenClaw, Docker BACnet, and human data modeling](../howto/openclaw_bacnet_docker_and_human_modeling) accurate (host-mode gateway, **`openfdd_api:8000`** proxy path, export/import JSON)—avoid stale guidance implying **`openfdd_bacnet_server:8080`** from arbitrary bridge containers.
+**OpenClaw + BACnet + UI modeling:** keep [OpenClaw, Docker BACnet, and human data modeling](../howto/openclaw_bacnet_docker_and_human_modeling) accurate (host-mode gateway, **`openfdd_api:8000`** proxy path, **`stack_default`**, export/import JSON)—avoid stale guidance implying **`openfdd_bacnet_server:8080`** from arbitrary bridge containers. After editing that page, rebuild the index (`python scripts/build_mcp_rag_index.py`) and **`docker restart openfdd_mcp_rag`** so retrieval matches git.
 
 ## Bootstrap
 

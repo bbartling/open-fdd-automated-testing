@@ -70,7 +70,9 @@ This sidecar provides retrieval-focused tools over derived index artifacts from 
 
 **Practical OpenClaw path:** call **`http://openfdd_api:8000/bacnet/...`** with the API key; avoid raw :8080 unless you mirror the stack’s `extra_hosts` and URL rules.
 
-For the full checklist, two-layer tests, and the **React** export → tag → import flow, see **[OpenClaw, Docker BACnet, and human data modeling](howto/openclaw_bacnet_docker_and_human_modeling)**.
+**Operator smoke (Docker host):** `./scripts/smoke_bacnet_api_to_gateway.sh` — proves **`openfdd_api` → `OFDD_BACNET_SERVER_URL`** with the same URL candidates as production (matches **`./scripts/bootstrap.sh --verify`** BACnet line).
+
+For the full checklist, two-layer tests, **“first five”** agent curls, and the **React** export → tag → import flow, see **[OpenClaw, Docker BACnet, and human data modeling](howto/openclaw_bacnet_docker_and_human_modeling)**.
 
 ---
 
