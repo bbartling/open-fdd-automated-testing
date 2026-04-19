@@ -110,7 +110,7 @@ printf '%s' 'YOUR_PASSWORD' | ./scripts/bootstrap.sh --user YOURNAME --password-
 | `--with-mqtt-bridge` | **Optional / experimental:** start Mosquitto (`:1883`) for a **generic** broker. MQTT integrations with the new BACnet driver are a future slice ([MQTT integration](howto/mqtt_integration)). |
 | `--with-mcp-rag` | **Optional:** include MCP RAG service at http://localhost:8090 (derived from canonical docs and generated docs text). |
 | `--mode MODE` | Module mode: `full` (default), `collector`, `model`, `engine`. |
-| `--minimal` | DB + bacnet-scraper + selene only. No FDD, weather, or API. Add `--with-grafana` for Grafana. |
+| `--minimal` | Collector mode: DB + SeleneDB + bacnet-scraper only. No FDD, weather, or API. Add `--with-grafana` for Grafana. |
 | `--verify` | Health checks only: list containers, test DB; exit. Does not start or stop. |
 | `--test` | Run tests and exit. With explicit `--mode`, runs that mode only. Without explicit `--mode` (default full), runs matrix: `collector`, `model`, `engine`, `full`. |
 | `--build SERVICE ...` | Rebuild and restart only listed services, then exit. Services: `api`, `bacnet-scraper`, `caddy`, `db`, `fdd-loop`, `frontend`, `grafana`, `host-stats`, `mcp-rag`, `mosquitto` (with `--with-mqtt-bridge`), `selene`, `weather-scraper`. |
