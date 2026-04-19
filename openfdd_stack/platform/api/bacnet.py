@@ -1,5 +1,6 @@
 """BACnet proxy routes — Open-FDD backend calls diy-bacnet-server (local or OT LAN)."""
 
+import base64
 import json
 import logging
 import os
@@ -11,7 +12,10 @@ from fastapi import APIRouter, Body, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from openfdd_stack.platform.bacnet_gateway_auth import bacnet_gateway_request_headers
-from openfdd_stack.platform.bacnet_host_gateway import bacnet_rpc_base_candidates
+from openfdd_stack.platform.bacnet_host_gateway import (
+    bacnet_rpc_base_candidates,
+    host_http_url_from_bacnet_address_env,
+)
 from openfdd_stack.platform.config import get_platform_settings
 from openfdd_stack.platform.database import get_conn
 from openfdd_stack.platform.graph_model import (
@@ -25,9 +29,43 @@ logger = logging.getLogger(__name__)
 
 _BASE_PAYLOAD = {"jsonrpc": "2.0", "id": "0"}
 
+# Run inside openfdd_bacnet_server (host network) via docker exec — must be valid Python (no broken try/indent).
+_BACNET_RPC_DOCKER_EXEC_SCRIPT = r"""
+import base64
+import json
+import os
+import urllib.error
+import urllib.request
+
+
+def main() -> None:
+    method = os.environ["OFDD_RPC_METHOD"]
+    payload = json.loads(base64.b64decode(os.environ["OFDD_RPC_PAYLOAD_B64"]).decode())
+    headers = json.loads(base64.b64decode(os.environ["OFDD_RPC_HEADERS_B64"]).decode())
+    timeout = float(os.environ.get("OFDD_RPC_TIMEOUT", "10"))
+    url = "http://127.0.0.1:8080/" + method
+    data = json.dumps(payload).encode("utf-8")
+    hdrs = {**headers, "Content-Type": "application/json"}
+    req = urllib.request.Request(url, data=data, headers=hdrs, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8", "replace")
+            out = {"ok": True, "status_code": resp.getcode(), "body": json.loads(body)}
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8", "replace") if e.fp else ""
+        out = {"ok": False, "status_code": e.code, "error": raw or f"HTTP {e.code}"}
+    except Exception as e:
+        out = {"ok": False, "error": str(e)}
+    print(json.dumps(out))
+
+
+if __name__ == "__main__":
+    main()
+""".strip()
+
 
 def _effective_bacnet_server_url() -> str:
-    """URL for the default BACnet gateway. Prefer env OFDD_BACNET_SERVER_URL over graph overlay so Docker (host.docker.internal) works when Swagger omits url."""
+    """URL for the default BACnet gateway. Prefer env OFDD_BACNET_SERVER_URL over graph overlay (Compose default is Caddy :8081)."""
     env_url = (os.environ.get("OFDD_BACNET_SERVER_URL") or "").strip().rstrip("/")
     if env_url:
         return env_url
@@ -326,8 +364,8 @@ def _bacnet_proxy_url_or_error(
 def _normalized_gateway_allowlist() -> frozenset[str]:
     """URLs that may receive OFDD_BACNET_SERVER_API_KEY (from GET /bacnet/gateways).
 
-    Includes Linux-Docker fallbacks (default gateway IP) when a configured URL uses
-    ``host.docker.internal`` so the proxy can try the same logical gateway on alternate paths.
+    Includes Caddy internal base, LAN from ``OFDD_BACNET_ADDRESS``, and default-route gateway IP
+    when a configured URL uses ``host.docker.internal`` so the proxy can try the same logical gateway on alternate paths.
     """
     urls: set[str] = set()
     for g in _get_gateways_list():
@@ -369,7 +407,7 @@ def bacnet_gateways():
     """
     Return gateways from config: default (OFDD_BACNET_SERVER_URL) plus entries from OFDD_BACNET_GATEWAYS.
     Use the **id** in the query parameter **gateway** on BACnet POST endpoints to target a specific gateway.
-    Docker: set OFDD_BACNET_SERVER_URL to sibling container (e.g. http://bacnet:8080) or host (e.g. http://host.docker.internal:8080).
+    Docker: default is http://caddy:8081 (API→Caddy→host :8080); override with LAN or remote gateway URLs as needed.
     """
     return _get_gateways_list()
 
@@ -403,7 +441,7 @@ def _post_rpc_once(
 
 
 def _post_rpc(base_url: str, method: str, params: dict, timeout: float = 10.0) -> dict:
-    """POST JSON-RPC to diy-bacnet-server; try Docker host fallbacks when host.docker.internal fails."""
+    """POST JSON-RPC to diy-bacnet-server; try :func:`bacnet_rpc_base_candidates` fallbacks (Caddy, LAN, bridge GW)."""
     configured = base_url.strip().rstrip("/")
     last: dict = {"ok": False, "error": "no gateway URL candidates", "gateway_url": configured}
     for base in bacnet_rpc_base_candidates(base_url):
@@ -411,9 +449,80 @@ def _post_rpc(base_url: str, method: str, params: dict, timeout: float = 10.0) -
         if out.get("ok"):
             return out
         last = out
+    fallback = _post_rpc_via_bacnet_container_if_local_gateway(configured, method, params, timeout)
+    if fallback:
+        if fallback.get("ok"):
+            return fallback
+        last = fallback
     if isinstance(last, dict):
         return {**last, "gateway_url": configured}
     return {"ok": False, "error": str(last), "gateway_url": configured}
+
+
+def _post_rpc_via_bacnet_container_if_local_gateway(
+    configured_url: str, method: str, params: dict, timeout: float
+) -> dict | None:
+    """
+    Last-resort fallback for same-host deployments:
+    execute the JSON-RPC call inside the bacnet-server container when API container networking
+    cannot reach host/Caddy paths (common with strict host<->bridge routing).
+    """
+    use_fallback = (os.environ.get("OFDD_BACNET_DOCKER_EXEC_FALLBACK") or "true").strip().lower()
+    if use_fallback in {"0", "false", "no", "off"}:
+        return None
+    configured = (configured_url or "").strip().rstrip("/")
+    local_candidates = {"http://caddy:8081", "http://host.docker.internal:8080", "http://localhost:8080", "http://127.0.0.1:8080"}
+    bind_url = host_http_url_from_bacnet_address_env()
+    if bind_url:
+        local_candidates.add(bind_url.rstrip("/"))
+    if configured not in local_candidates:
+        return None
+
+    try:
+        import docker
+    except Exception as e:
+        return {"ok": False, "error": f"docker-exec fallback unavailable: {e}"}
+
+    payload = {**_BASE_PAYLOAD, "method": method, "params": params}
+    payload_b64 = base64.b64encode(json.dumps(payload).encode("utf-8")).decode("ascii")
+    headers_b64 = base64.b64encode(json.dumps(bacnet_gateway_request_headers()).encode("utf-8")).decode("ascii")
+    try:
+        client = docker.from_env()
+        container_name = (os.environ.get("OFDD_BACNET_SERVER_CONTAINER") or "openfdd_bacnet_server").strip()
+        container = client.containers.get(container_name)
+        res = client.api.exec_create(
+            container.id,
+            ["python3", "-c", _BACNET_RPC_DOCKER_EXEC_SCRIPT],
+            environment={
+                "OFDD_RPC_METHOD": method,
+                "OFDD_RPC_PAYLOAD_B64": payload_b64,
+                "OFDD_RPC_HEADERS_B64": headers_b64,
+                "OFDD_RPC_TIMEOUT": str(max(1.0, float(timeout))),
+            },
+        )
+        out = client.api.exec_start(res["Id"], demux=True)
+        stdout_b, stderr_b = out
+        stdout = (stdout_b or b"").decode("utf-8", "replace").strip()
+        stderr = (stderr_b or b"").decode("utf-8", "replace").strip()
+        inspect = client.api.exec_inspect(res["Id"])
+        exit_code = inspect.get("ExitCode", -1)
+        if exit_code not in (0, None):
+            return {
+                "ok": False,
+                "error": f"docker-exec fallback exit {exit_code}: {stderr or stdout or 'no output'}",
+            }
+        if not stdout:
+            return {
+                "ok": False,
+                "error": f"docker-exec fallback returned no stdout: {stderr or 'no stderr'}",
+            }
+        last_line = stdout.splitlines()[-1]
+        parsed = json.loads(last_line)
+        if isinstance(parsed, dict):
+            return parsed
+        return {"ok": False, "error": f"docker-exec fallback invalid payload: {last_line}"}
+    except Exception as e:
+        return {"ok": False, "error": f"docker-exec fallback failed: {e}"}
 
 
 @router.post("/server_hello", summary="BACnet server hello")
@@ -421,7 +530,7 @@ def bacnet_server_hello(
     body: dict = Body(
         default={},
         examples={"default": {"value": {}}},
-        description='Optional: {"url": "http://..."}. Omit to use server default (host.docker.internal:8080 in Docker).',
+        description='Optional: {"url": "http://..."}. Omit to use server default (Compose: http://caddy:8081).',
     )
 ):
     """

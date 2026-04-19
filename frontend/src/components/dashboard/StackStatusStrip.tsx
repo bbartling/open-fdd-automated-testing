@@ -47,6 +47,13 @@ export function StackStatusStrip() {
       : "green";
   const mqttStatus: Status =
     !mqtt ? "gray" : mqtt.enabled && mqtt.connected ? "green" : mqtt.enabled ? "yellow" : "gray";
+  const bacnetDiagnostics = bacnet?.diagnostics;
+  const bacnetTroubleshooting =
+    bacnetStatus === "red" && bacnetDiagnostics
+      ? `BACnet gateway unreachable (${bacnetDiagnostics.errorCategory}). API target: ${
+          bacnetDiagnostics.gatewayUrlTheApiUses ?? "unknown"
+        }. Check Network tab: ${bacnetDiagnostics.checkInNetworkTab}`
+      : null;
 
   const stripDegradedSig = useRef("");
   useEffect(() => {
@@ -135,6 +142,9 @@ export function StackStatusStrip() {
               : "Not enabled or no bridge"
         }
       />
+      {bacnetTroubleshooting ? (
+        <span className="ml-1 text-xs text-red-700 dark:text-red-400">{bacnetTroubleshooting}</span>
+      ) : null}
     </div>
   );
 }

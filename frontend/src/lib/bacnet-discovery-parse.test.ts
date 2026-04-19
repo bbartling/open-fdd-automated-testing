@@ -49,6 +49,44 @@ describe("extractWhoisDevices", () => {
     };
     expect(extractWhoisDevices(res)).toHaveLength(1);
   });
+
+  it("treats mis-encoded string `devices` as empty (gateway bug / legacy payload)", () => {
+    const res = {
+      body: {
+        result: {
+          data: {
+            devices: "No response(s) on WhoIs start_instance 1 end_instance 4194303",
+          },
+        },
+      },
+    } as WhoIsResponse;
+    expect(extractWhoisDevices(res)).toEqual([]);
+  });
+
+  it("reads devices from top-level body array", () => {
+    const res: WhoIsResponse = {
+      body: [{ "i-am-device-identifier": "device:2" }] as unknown as Record<string, unknown>,
+    };
+    expect(extractWhoisDevices(res)).toHaveLength(1);
+  });
+
+  it("reads devices from object map of rows", () => {
+    const res: WhoIsResponse = {
+      body: {
+        result: {
+          data: {
+            devices: {
+              a: { "i-am-device-identifier": "device:3" },
+              b: { "i-am-device-identifier": "device:4" },
+            },
+          },
+        },
+      },
+    };
+    const rows = extractWhoisDevices(res);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r["i-am-device-identifier"]).sort()).toEqual(["device:3", "device:4"]);
+  });
 });
 
 describe("extractPointDiscoveryObjects", () => {

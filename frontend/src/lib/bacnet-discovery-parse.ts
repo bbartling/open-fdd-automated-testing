@@ -35,11 +35,25 @@ export function parseDeviceInstanceFromWhoisRow(row: WhoisDeviceRow): number | n
 
 export function extractWhoisDevices(res: WhoIsResponse): WhoisDeviceRow[] {
   const body = res?.body ?? res;
+  if (Array.isArray(body)) {
+    return body as WhoisDeviceRow[];
+  }
   const data =
-    (body as { result?: { data?: { devices?: unknown[] }; devices?: unknown[] } })?.result?.data ??
-    (body as { devices?: unknown[] });
-  const devices = data?.devices ?? (Array.isArray(data) ? data : []);
-  return devices as WhoisDeviceRow[];
+    (body as { result?: { data?: { devices?: unknown }; devices?: unknown } })?.result?.data ??
+    (body as { devices?: unknown; data?: { devices?: unknown } })?.data ??
+    (body as { devices?: unknown });
+  const devicesRaw = data?.devices ?? (Array.isArray(data) ? data : null);
+  if (Array.isArray(devicesRaw)) {
+    return devicesRaw as WhoisDeviceRow[];
+  }
+  if (devicesRaw && typeof devicesRaw === "object") {
+    const vals = Object.values(devicesRaw as Record<string, unknown>);
+    if (vals.length && vals.every((v) => v && typeof v === "object" && !Array.isArray(v))) {
+      return vals as WhoisDeviceRow[];
+    }
+  }
+  // Mis-encoded gateway payloads (e.g. error string in `devices`) must never crash the UI.
+  return [];
 }
 
 export type PointDiscoveryObjectRow = {

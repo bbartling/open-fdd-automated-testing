@@ -29,3 +29,9 @@
 		reverse_proxy frontend:5173
 	}
 }
+
+# Internal only (not published to host): bridge containers (api, scraper) → Caddy → host :8080.
+# This endpoint is path-transparent so Open-FDD can use OFDD_BACNET_SERVER_URL=http://caddy:8081.
+:8081 {
+	reverse_proxy host.docker.internal:8080
+}

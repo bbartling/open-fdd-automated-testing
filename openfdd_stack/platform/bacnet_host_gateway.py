@@ -1,11 +1,10 @@
 """Docker/Linux helpers for reaching the DIY BACnet gateway from bridge-networked containers.
 
-``bacnet-server`` is often ``network_mode: host`` and listens on the host's TCP :8080. The API
-and scrapers use ``http://host.docker.internal:8080`` (``extra_hosts: host.docker.internal:host-gateway``).
-On many Linux hosts **hairpin routing is broken**: both ``host.docker.internal`` and the bridge
-gateway (e.g. ``172.19.0.1``) time out while ``curl http://localhost:8080`` on the host works.
-Then use the same host IPv4 as ``OFDD_BACNET_ADDRESS`` (e.g. ``192.168.204.18/24:47808`` →
-``http://192.168.204.18:8080``) so bridge containers reach the gateway on the LAN address.
+``bacnet-server`` is often ``network_mode: host`` and listens on the host's TCP :8080. Bridge
+containers usually reach it with ``http://<OFDD_BACNET_ADDRESS-ipv4>:8080`` (OT NIC on the host).
+Compose defaults to ``http://caddy:8081`` (Caddy → ``host.docker.internal:8080``)
+when no address is set; :func:`bacnet_rpc_base_candidates` tries **LAN first** when the primary is
+that Caddy URL or ``host.docker.internal``, then Caddy / default-route fallbacks.
 """
 
 from __future__ import annotations
@@ -14,6 +13,9 @@ import os
 import re
 import socket
 import struct
+
+# Internal-only Caddy site (see stack/caddy/Caddyfile): path-transparent reverse proxy to host :8080.
+CADDY_INTERNAL_DIY_BACNET_BASE = "http://caddy:8081"
 
 # First IPv4 in OFDD_BACNET_ADDRESS like ``192.168.204.18/24:47808`` (BACnet/IP bind; HTTP JSON-RPC is :8080).
 _BACNET_ADDR_IPV4_RE = re.compile(
@@ -83,9 +85,15 @@ def bacnet_rpc_base_candidates(primary: str) -> list[str]:
     """
     Ordered base URLs to try for JSON-RPC (no trailing slash).
 
-    After ``primary``, try the host LAN URL derived from ``OFDD_BACNET_ADDRESS`` when set
-    (fixes Linux Docker hairpin to ``network_mode: host`` gateway). Then try replacing
-    ``host.docker.internal`` with the default-route gateway IP.
+    When ``OFDD_BACNET_ADDRESS`` yields a host IPv4, ``http://<that-ip>:8080`` is usually the
+    most reliable bridge→host path on Linux OT labs. Try it **first** when ``primary`` is the
+    internal Caddy base or uses ``host.docker.internal`` (before Caddy / hairpin fallbacks).
+
+    With ``host.docker.internal``: LAN (if any), Caddy internal, ``primary``, then default-route
+    gateway substitution.
+
+    When ``primary`` is already a concrete LAN URL (not Caddy / not host.docker), only that URL
+    and optional duplicates from env are used.
     """
     p = primary.strip().rstrip("/")
     if not p:
@@ -99,11 +107,23 @@ def bacnet_rpc_base_candidates(primary: str) -> list[str]:
             seen.add(u)
             out.append(u)
 
-    add(p)
     from_addr = host_http_url_from_bacnet_address_env()
-    if from_addr:
+    p_lower = p.lower()
+    hdi = "host.docker.internal" in p_lower
+    primary_is_caddy_internal = p.rstrip("/") == CADDY_INTERNAL_DIY_BACNET_BASE.rstrip("/")
+    prefer_lan_first = bool(
+        from_addr
+        and (hdi or primary_is_caddy_internal)
+        and from_addr.rstrip("/") != p
+    )
+    if prefer_lan_first:
         add(from_addr)
-    if "host.docker.internal" in p.lower():
+    if hdi:
+        add(CADDY_INTERNAL_DIY_BACNET_BASE)
+    add(p)
+    if from_addr and not prefer_lan_first:
+        add(from_addr)
+    if hdi:
         gw = linux_default_ipv4_gateway()
         if gw:
             alt = re.sub(r"(?i)host\.docker\.internal", gw, p, count=1)
