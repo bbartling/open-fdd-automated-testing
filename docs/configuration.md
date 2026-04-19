@@ -34,9 +34,12 @@ Example keys (GET/PUT /config or OFDD_* at bootstrap seed):
 | `brick_ttl_dir` | — | Optional. Directory containing Brick model TTL (e.g. `config/`); platform uses first `.ttl` or brick_ttl path for FDD column mapping. Optional if using points `brick_type`/fdd_input. See [Data modeling](modeling/overview). |
 | `bacnet_enabled` | true | Enable BACnet scraper |
 | `graph_sync_interval_min` | 5 | Minutes between serializing the **full** in-memory graph to `data_model.ttl` (API background thread). That write runs `sync_brick_from_db` first, so Brick **`ref:`** external references reflect the DB at serialize time. Env: `OFDD_GRAPH_SYNC_INTERVAL_MIN`. Edit in the React app under **OpenFDD Config** (not Overview). For an immediate refresh after discovery or DB edits, use **Data model → Serialize to TTL** or GET `/data-model/ttl` with save. |
-| `bacnet_scrape_interval_min` | 5 | Poll interval (minutes) |
-| `bacnet_site_id` | default | Site to tag when scraping (use on **remote gateways** so data is attributed to the right building on the central DB) |
-| `bacnet_gateways` | — | Optional. **Central aggregator:** JSON array of `{url, site_id}`; scraper polls each remote diy-bacnet-server in turn. Env: `OFDD_BACNET_GATEWAYS`. |
+| `bacnet_scrape_interval_min` | 1 | Poll interval (minutes). Matches ``DEFAULT_PLATFORM_CONFIG`` on a fresh deploy; production setups usually bump to 5+. |
+| `bacnet_interface` | 0.0.0.0 | Bind interface for rusty-bacnet's BACnet/IP client. `0.0.0.0` binds every interface; set to a specific IP for dual-NIC hosts. |
+| `bacnet_port` | 47808 | UDP port for BACnet/IP (ASHRAE 135 default). |
+| `bacnet_broadcast_address` | 255.255.255.255 | Who-Is broadcast target. Set to the subnet broadcast when routers don't forward the default. |
+| `bacnet_apdu_timeout_ms` | 6000 | APDU timeout for every request the driver issues. |
+| `bacnet_device_instance` | — | Optional. When set, the driver registers itself as a Device object on the network (required for COV subscriptions and some vendor gateways). |
 | `open_meteo_enabled` | true | Enable weather; when true, **FDD loop runs a weather fetch at the start of each run** (same cadence as rules, every `rule_interval_hours`). |
 | `open_meteo_interval_hours` | 24 | **Standalone weather-scraper only.** Poll interval (hours) when using the optional weather-scraper container. Ignored when weather is run from the FDD loop. |
 | `open_meteo_latitude` | 41.88 | Site latitude |
@@ -85,10 +88,12 @@ Platform config (e.g. **Scrape interval (min)**) is stored in the data model and
 
 ---
 
-## BACnet: single gateway, remote gateways, central aggregator
+## BACnet: single-site deployment
 
-- **Single building (or one remote gateway):** Set `OFDD_BACNET_SERVER_URL` and optionally `OFDD_BACNET_SITE_ID` (e.g. `building-a`). The scraper tags all readings with that site. On a **remote** gateway (diy-bacnet-server + scraper on another subnet), point `OFDD_DB_DSN` at the central Open-FDD DB and set `OFDD_BACNET_SITE_ID` to the site name/UUID used on the central API so data is attributed to that building.
-- **Central aggregator (multiple remote gateways):** On the central host, do **not** run local bacnet-server/bacnet-scraper; run only DB, API, Grafana, FDD loop, and (optional) weather. Set `OFDD_BACNET_GATEWAYS` to a JSON array, e.g. `[{"url":"http://10.1.1.1:8080","site_id":"building-a"},{"url":"http://10.1.2.1:8080","site_id":"building-b"}]`, and run one scraper container (or cron) that polls each URL and writes to the central DB with the given `site_id`. Alternatively, deploy one scraper per building elsewhere, each with `OFDD_DB_DSN=central` and `OFDD_BACNET_SITE_ID=<that building>`.
+After Phase 2.5, the BACnet driver is embedded (rusty-bacnet) and binds UDP/47808 directly on the host NIC. Multi-site topologies return as `:bacnet_network` nodes in SeleneDB — one per site — in a later slice. For now, a typical deployment runs one `bacnet-scraper` container per site with `network_mode: host`.
+
+- **Single building:** The defaults above work. `OFDD_BACNET_INTERFACE=0.0.0.0` binds every interface; on a dual-NIC edge device set it to the IP that reaches the BAS.
+- **Firewall / routing:** Because the driver is in-process, there is no HTTP gateway to firewall. UDP/47808 needs to reach the BAS from the scraper's container. On Linux this typically means running with `network_mode: host` and ensuring `ufw` / `iptables` permit outbound UDP/47808 on the OT NIC.
 
 **Open-Meteo weather points** (stored in `timeseries_readings`, `external_id`):
 
@@ -139,9 +144,12 @@ For edge deployments with limited disk, set these at bootstrap (or in `stack/.en
 | `OFDD_DB_NAME` | Database name |
 | `OFDD_DB_USER` | Database user |
 | `OFDD_DB_PASSWORD` | Database password |
-| `OFDD_BACNET_ADDRESS` | Optional. BACnet/IP **UDP** bind for bacpypes3 (e.g. `192.168.1.10/24:47808`). Set via `./scripts/bootstrap.sh --bacnet-address …`. Not the HTTP gateway URL. |
-| `OFDD_BACNET_SERVER_URL` | diy-bacnet-server **HTTP** base URL (default from Compose: `http://host.docker.internal:8080` for API/scraper → host-mode gateway). |
-| `OFDD_BACNET_SITE_ID` | Site to tag when scraping (default: default; use on remote gateways) |
-| `OFDD_BACNET_GATEWAYS` | JSON array of {url, site_id} for central aggregator |
+| `OFDD_BACNET_INTERFACE` | Bind interface for rusty-bacnet's BACnet/IP socket (default `0.0.0.0`). Set via `./scripts/bootstrap.sh --bacnet-address …`. |
+| `OFDD_BACNET_PORT` | BACnet/IP UDP port (default `47808`). |
+| `OFDD_BACNET_BROADCAST_ADDRESS` | Who-Is broadcast target (default `255.255.255.255`). |
+| `OFDD_BACNET_APDU_TIMEOUT_MS` | APDU timeout in milliseconds (default `6000`). |
+| `OFDD_BACNET_DEVICE_INSTANCE` | Optional local Device object instance (0-4194303). When set, the driver registers itself as a Device on the network. Set via `./scripts/bootstrap.sh --bacnet-instance N`. |
+| `OFDD_BACNET_SCRAPE_ENABLED` | Toggle (default `true`). Set `false` to idle the scraper without tearing down the container. |
+| `OFDD_BACNET_SCRAPE_INTERVAL_MIN` | Scrape interval in minutes (default `5`). |
 | `OFDD_RULES_DIR` | Rules directory (default: stack/rules) |
 

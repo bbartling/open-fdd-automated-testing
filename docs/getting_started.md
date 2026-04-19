@@ -34,7 +34,7 @@ This page covers **prerequisites** and the **bootstrap script**: how to get the 
    printf '%s' 'YOUR_PASSWORD' | ./scripts/bootstrap.sh --user YOURNAME --password-stdin --caddy-self-signed
    ```
 
-   That’s it. The script builds and starts the full stack (DB, API, frontend, Caddy, diy-bacnet-server, BACnet scraper, weather scraper, FDD loop), waits for Postgres, runs migrations, and **seeds platform config** via the API (PUT /config) so runtime settings are in the knowledge graph. When it finishes you get:
+   That’s it. The script builds and starts the full stack (DB, API, frontend, Caddy, BACnet scraper with embedded rusty-bacnet driver, weather scraper, FDD loop), waits for Postgres, runs migrations, and **seeds platform config** via the API (PUT /config) so runtime settings are in the knowledge graph. When it finishes you get:
 
    - **API:** http://localhost:8000 (interactive OpenAPI/Swagger at `/docs` is **disabled** in the shipped API; use the React app and [API reference](appendix/api_reference)).  
    - **Frontend:** http://localhost:5173 (or via Caddy http://localhost:80). See [Using the React dashboard](frontend) for what each page does.  
@@ -78,7 +78,7 @@ This starts an MCP-style retrieval sidecar at `http://localhost:8090` using deri
   git clone https://github.com/bbartling/open-fdd-afdd-stack.git
   cd open-fdd-afdd-stack
   ```
-- **BACnet (default data driver):** The default data driver is BACnet. Bootstrap **automatically** builds and starts [diy-bacnet-server](https://github.com/bbartling/diy-bacnet-server) as its own Docker container (plus the BACnet scraper). Run **BACnet discovery** from the UI or API, then add points to the **data model** (with `bacnet_device_id` / `object_identifier`)—the scraper reads **only the database + graph**, not a CSV file. See [BACnet → Setup](bacnet/index#setup) and [BACnet overview](bacnet/overview). To run without BACnet (e.g. central-only with remote gateways), start only the services you need (e.g. `docker compose --profile grafana up -d db api fdd-loop weather-scraper grafana` from `stack/` if you want optional Grafana).
+- **BACnet (default data driver):** The default data driver is BACnet. Bootstrap builds and starts the BACnet scraper container with the embedded [rusty-bacnet](https://github.com/jscott3201/rusty-bacnet) driver (BACnet/IP UDP/47808 via `network_mode: host`). Run discovery via `POST /bacnet/whois_range` and `POST /bacnet/point_discovery_to_graph` — devices and objects land in SeleneDB as typed graph nodes. Bind each object to a point via `protocolBinding`; the scraper reads those bindings and writes samples to SeleneDB. See [BACnet → Setup](bacnet/index#setup) and [BACnet overview](bacnet/overview). To run without BACnet (e.g. central-only deployment), omit the `selene` profile so the scraper doesn't come up.
 
 ---
 
@@ -86,15 +86,14 @@ This starts an MCP-style retrieval sidecar at `http://localhost:8090` using deri
 
 `scripts/bootstrap.sh` (run from the **repo root**):
 
-1. Ensures **diy-bacnet-server** exists as a sibling repo (clones it if missing).
-2. Runs **docker compose up -d --build** from `stack/` (builds all images, starts all services).
-3. Waits for **Postgres** to be ready (~15s).
-4. Applies **database migrations** (idempotent; safe on existing DBs).
-5. **Seeds platform config** via PUT /config (waits for API, then sends default or `stack/.env` values into the RDF graph).
-6. Optionally runs **--reset-data** if you passed that flag (deletes all sites + data-model reset; for testing).
+1. Runs **docker compose up -d --build** from `stack/` (builds all images, starts all services).
+2. Waits for **Postgres** to be ready (~15s).
+3. Applies **database migrations** (idempotent; safe on existing DBs).
+4. **Seeds platform config** via PUT /config (waits for API, then sends default or `stack/.env` values into the RDF graph).
+5. Optionally runs **--reset-data** if you passed that flag (deletes all sites + data-model reset; for testing).
 
 
-**Default full stack:** `./scripts/bootstrap.sh` (no flags) starts TimescaleDB, API, **diy-bacnet-server** (BACnet/IP bridge), **BACnet scraper**, weather scraper, FDD loop, and **Caddy** reverse proxy (HTTP on `:80` unless you add TLS flags below). Same service set as the optional one-liner in [Do this to bootstrap](#do-this-to-bootstrap).
+**Default full stack:** `./scripts/bootstrap.sh` (no flags) starts TimescaleDB, API, **BACnet scraper** (rusty-bacnet embedded, UDP/47808 host-mode), weather scraper, FDD loop, and **Caddy** reverse proxy (HTTP on `:80` unless you add TLS flags below). Same service set as the optional one-liner in [Do this to bootstrap](#do-this-to-bootstrap).
 
 **Standard full-stack bootstrap with self-signed TLS (Caddy) and app login:** uses **JWT** and **`Authorization: Bearer`**, not HTTP Basic Auth ([Security — authentication](security#frontend-and-api-authentication)).
 
@@ -106,18 +105,18 @@ printf '%s' 'YOUR_PASSWORD' | ./scripts/bootstrap.sh --user YOURNAME --password-
 
 | Option | Effect |
 |--------|--------|
-| *(none)* | Build and start full stack (DB, API, frontend, Caddy, BACnet server, scrapers, FDD loop). Prints API key if generated. Grafana and MQTT broker **not** started by default. |
+| *(none)* | Build and start full stack (DB, API, frontend, Caddy, BACnet scraper, weather scraper, FDD loop). Prints API key if generated. Grafana and MQTT broker **not** started by default. |
 | `--with-grafana` | **Optional:** include Grafana at http://localhost:3000 (admin/admin). Add a `/grafana` route in Caddy when you extend the Caddyfile (see [Security](security)). |
-| `--with-mqtt-bridge` | **Optional / experimental:** start Mosquitto (`:1883`) for a **generic** broker. Pass **`BACNET2MQTT_*`** / **`MQTT_RPC_*`** env through `stack/.env` to **diy-bacnet-server** for BACnet2MQTT and/or the experimental MQTT RPC gateway ([MQTT integration](howto/mqtt_integration)). |
+| `--with-mqtt-bridge` | **Optional / experimental:** start Mosquitto (`:1883`) for a **generic** broker. MQTT integrations with the new BACnet driver are a future slice ([MQTT integration](howto/mqtt_integration)). |
 | `--with-mcp-rag` | **Optional:** include MCP RAG service at http://localhost:8090 (derived from canonical docs and generated docs text). |
 | `--mode MODE` | Module mode: `full` (default), `collector`, `model`, `engine`. |
-| `--minimal` | DB + BACnet server + bacnet-scraper only. No FDD, weather, or API. Add `--with-grafana` for Grafana. |
+| `--minimal` | Collector mode: DB + SeleneDB + bacnet-scraper only. No FDD, weather, or API. Add `--with-grafana` for Grafana. |
 | `--verify` | Health checks only: list containers, test DB; exit. Does not start or stop. |
 | `--test` | Run tests and exit. With explicit `--mode`, runs that mode only. Without explicit `--mode` (default full), runs matrix: `collector`, `model`, `engine`, `full`. |
-| `--build SERVICE ...` | Rebuild and restart only listed services, then exit. Services: `api`, `bacnet-server`, `bacnet-scraper`, `caddy`, `db`, `fdd-loop`, `frontend`, `grafana`, `host-stats`, `mcp-rag`, `mosquitto` (with `--with-mqtt-bridge`), `weather-scraper`. |
+| `--build SERVICE ...` | Rebuild and restart only listed services, then exit. Services: `api`, `bacnet-scraper`, `caddy`, `db`, `fdd-loop`, `frontend`, `grafana`, `host-stats`, `mcp-rag`, `mosquitto` (with `--with-mqtt-bridge`), `selene`, `weather-scraper`. |
 | `--build-all` | Rebuild and restart all services; then exit. |
 | `--frontend` | Before start: stop frontend container and remove `frontend_node_modules` volume so the next `up` runs a fresh `npm ci`. Use after changing `frontend/package.json`; the frontend service also runs `npm run build` on every start. |
-| `--update` | Git pull open-fdd and diy-bacnet-server (sibling), then rebuild and restart (keeps DB). |
+| `--update` | Git pull this repo, then rebuild and restart (keeps DB). |
 | `--maintenance` | Safe Docker prune only (no volume prune). |
 | `--reset-grafana` | Wipe Grafana volume and re-apply provisioning. DB and other data retained. |
 | `--reset-data` | Delete all sites via API and POST /data-model/reset (testing). |
@@ -129,7 +128,7 @@ printf '%s' 'YOUR_PASSWORD' | ./scripts/bootstrap.sh --user YOURNAME --password-
 | `--caddy-self-signed` | Self-signed HTTPS for Caddy (`:443`, `:80` → HTTPS): writes certs under `stack/caddy/certs/`, sets `OPENFDD_CADDYFILE` and `OFDD_TRUST_FORWARDED_PROTO=true` in `stack/.env`. |
 | `--caddy-tls-cn HOST` | With `--caddy-self-signed`: certificate CN/SAN (default `openfdd.local`). |
 | `--caddy-http-only` | Revert to the default HTTP-only Caddyfile on `:80`; removes `OPENFDD_CADDYFILE` from `stack/.env` and sets `OFDD_TRUST_FORWARDED_PROTO=false`. |
-| `--no-auth` | Removes auth-related keys from `stack/.env`: **`OFDD_API_KEY`**, app-user keys (**`OFDD_APP_USER`**, **`OFDD_APP_USER_HASH`**, **`OFDD_JWT_SECRET`**, token TTLs), and **`OFDD_BACNET_SERVER_API_KEY`**. Open-FDD API then skips Bearer/JWT enforcement; diy-bacnet-server gets an empty **`BACNET_RPC_API_KEY`** so RPC Bearer middleware is off. |
+| `--no-auth` | Removes auth-related keys from `stack/.env`: **`OFDD_API_KEY`**, app-user keys (**`OFDD_APP_USER`**, **`OFDD_APP_USER_HASH`**, **`OFDD_JWT_SECRET`**, token TTLs). Open-FDD API then skips Bearer/JWT enforcement. |
 | `--user NAME` | Dashboard user: writes `OFDD_APP_USER`, Argon2 hash, `OFDD_JWT_SECRET`, and token TTLs into `stack/.env` (requires a password — next rows). |
 | `--password-file PATH` | Read the dashboard password from a file (first line); avoids putting the password on the command line. |
 | `--password-stdin` | Read the dashboard password from stdin (pipe or redirect into bootstrap; see [Security — authentication](security#frontend-and-api-authentication) and `bootstrap.sh` header comments). |
@@ -141,9 +140,8 @@ printf '%s' 'YOUR_PASSWORD' | ./scripts/bootstrap.sh --user YOURNAME --password-
 |----------|-------------|------|
 | **`OFDD_API_KEY`** | **Open-FDD API** | Machine **`Authorization: Bearer`** for REST (Swagger **Authorize**, BACnet scraper → `GET /config`, scripts, agents). |
 | **`OFDD_APP_USER`**, **`OFDD_APP_USER_HASH`**, **`OFDD_JWT_SECRET`** (+ TTL keys) | **Open-FDD API** (`/auth/login`, JWT validation) | Dashboard login; the browser keeps a **short-lived JWT** and sends **`Authorization: Bearer`** with that token on API calls—not the dashboard password. |
-| **`OFDD_BACNET_SERVER_API_KEY`** | **Open-FDD API** and **bacnet-scraper** (outbound to the gateway) | **`Authorization: Bearer`** on JSON-RPC to **diy-bacnet-server**. Docker Compose passes the **same value** into the gateway container as **`BACNET_RPC_API_KEY`**. When that env is non-empty, the gateway enforces Bearer on RPC routes except **`POST /server_hello`**; when empty, RPC auth is disabled. |
 
-You normally only edit **`stack/.env`**; do not set **`BACNET_RPC_API_KEY`** separately unless you override compose env. Standalone diy-bacnet-server (outside this stack) uses **`BACNET_RPC_API_KEY`** in **its** environment only—see the [diy-bacnet-server README](https://github.com/bbartling/diy-bacnet-server/blob/master/README.md).
+After Phase 2.5d there is no separate BACnet gateway container — the rusty-bacnet driver runs in-process — so there's no second Bearer token to manage.
 
 Dashboard login and piping passwords into `--user` are covered in more detail (including maintenance one-liners) under **[Security — authentication](security#frontend-and-api-authentication)**.
 

@@ -11,30 +11,28 @@
 #
 # Optional (single-purpose):
 #   ./scripts/bootstrap.sh --install-docker     # attempt Docker install (Linux) then run
-#   ./scripts/bootstrap.sh --minimal            # DB + bacnet-server + bacnet-scraper only (add --with-grafana for Grafana)
+#   ./scripts/bootstrap.sh --minimal            # DB + bacnet-scraper only (add --with-grafana for Grafana)
 #   ./scripts/bootstrap.sh --verify             # health checks only (read-only; does not edit .env or recreate containers)
-#   ./scripts/bootstrap.sh --verify --autofix-bacnet   # same + optional BACnet hairpin repair when host gateway is up but API cannot reach it
-#   ./scripts/bootstrap.sh --autofix-bacnet ...        # with full stack: also run post-up BACnet hairpin repair (same helper as verify); omit for default (no .env rewrite)
 #   ./scripts/bootstrap.sh --test             # run tests: frontend (lint + typecheck + vitest), backend (pytest), Caddy validate; then exit. Does not run E2E/Selenium or long-running tests. Docker optional (skips Caddy validate if unavailable). OFDD_BOOTSTRAP_INSTALL_DEV=1 can auto-create .venv + pip install -e '.[dev]'.
-#   ./scripts/bootstrap.sh --update             # git pull this repo + diy-bacnet-server sibling, rebuild, restart (keeps DB)
+#   ./scripts/bootstrap.sh --update             # git pull this repo, rebuild, restart (keeps DB)
 #   ./scripts/bootstrap.sh --maintenance        # safe prune only (NO volumes)
 #   ./scripts/bootstrap.sh --build api ...      # rebuild and restart only selected services
-#   (Available services: api, bacnet-server, bacnet-scraper, caddy, db, fdd-loop, frontend, grafana [--with-grafana], host-stats, mosquitto [--with-mqtt-bridge], weather-scraper)
+#   (Available services: api, bacnet-scraper, caddy, db, fdd-loop, frontend, grafana [--with-grafana], host-stats, mosquitto [--with-mqtt-bridge], selene [--profile selene], weather-scraper)
 #   ./scripts/bootstrap.sh --build mcp-rag     # rebuild and restart only mcp-rag service
 #   ./scripts/bootstrap.sh --frontend          # before start: stop frontend, remove frontend node_modules volume (fresh npm install on next up)
 #   ./scripts/bootstrap.sh --reset-data        # delete all sites via API + POST /data-model/reset (testing)
 #
 #
 #
-# Site maintenance (pull both repos, prune, rebuild, verify):
+# Site maintenance (pull, prune, rebuild, verify):
 #   ./scripts/bootstrap.sh --maintenance --update --verify
 #   --verify here is HTTP health only (BACnet server_hello, API /health), not pytest.
-#   ./scripts/bootstrap.sh --maintenance --update --verify --force-rebuild --test --diy-bacnet-tests
+#   ./scripts/bootstrap.sh --maintenance --update --verify --force-rebuild --test
 #
 #
 # Heavy ops example (pull, rebuild, verify, tests, app user, frontend volume reset, self-signed Caddy):
-#   printf '%s' 'asdf' | ./scripts/bootstrap.sh --maintenance --update --verify --force-rebuild --test --diy-bacnet-tests --user ben --password-stdin --frontend --caddy-self-signed
-#   printf '%s' 'asdf' | ./scripts/bootstrap.sh --maintenance --update --verify --force-rebuild --test --diy-bacnet-tests --user ben --password-stdin --frontend --bacnet-address 192.168.204.18/24:47808 --bacnet-instance 123456 --with-mcp-rag
+#   printf '%s' 'asdf' | ./scripts/bootstrap.sh --maintenance --update --verify --force-rebuild --test --user ben --password-stdin --frontend --caddy-self-signed
+#   printf '%s' 'asdf' | ./scripts/bootstrap.sh --maintenance --update --verify --force-rebuild --test --user ben --password-stdin --frontend --bacnet-address 192.168.204.18/24:47808 --bacnet-instance 123456 --with-mcp-rag
 #   Standard HTTP lab (OT NIC): ./scripts/bootstrap.sh --bacnet-address 192.168.204.11/24:47808 --bacnet-instance 123456
 
 
@@ -49,8 +47,6 @@ STACK_DIR="$REPO_ROOT/stack"
 # -----------------------------
 VERIFY_ONLY=false
 VERIFY_CODE=false
-# With --verify only: if BACnet API→gateway fails, rewrite OFDD_BACNET_SERVER_URL and recreate api (default: off; verify stays read-only).
-AUTOFIX_BACNET_GATEWAY=false
 # Set by check_prereqs_for_test_mode when docker is missing or unusable (Caddy validate skipped).
 SKIP_DOCKER_FOR_TESTS=0
 MINIMAL=false
@@ -65,7 +61,6 @@ BUILD_ALL=false
 UPDATE_PULL_REBUILD=false
 UPDATE_FORCE_REBUILD=false
 MAINTENANCE_ONLY=false
-DIY_BACNET_TESTS=false
 DOCTOR_ONLY=false
 INSTALL_DOCKER=false
 SKIP_DOCKER_INSTALL=false
@@ -108,9 +103,6 @@ fi
 # Used by --build SERVICE ...
 BUILD_SERVICES_STR=""
 
-# Default repo to clone when diy-bacnet-server sibling is missing
-DIY_BACNET_REPO_URL="${DIY_BACNET_REPO_URL:-https://github.com/bbartling/diy-bacnet-server.git}"
-
 # -----------------------------
 # Args
 # -----------------------------
@@ -120,7 +112,6 @@ while [[ $i -lt ${#args[@]} ]]; do
   arg="${args[$i]}"
   case "$arg" in
     --verify) VERIFY_ONLY=true ;;
-    --autofix-bacnet) AUTOFIX_BACNET_GATEWAY=true ;;
     --test) VERIFY_CODE=true ;;
     --minimal) MINIMAL=true ;;
     --mode)
@@ -142,7 +133,6 @@ while [[ $i -lt ${#args[@]} ]]; do
     --force-rebuild) UPDATE_FORCE_REBUILD=true ;;
     --maintenance) MAINTENANCE_ONLY=true ;;
     --doctor) DOCTOR_ONLY=true ;;
-    --diy-bacnet-tests) DIY_BACNET_TESTS=true ;;
     --install-docker) INSTALL_DOCKER=true ;;
     --skip-docker-install) SKIP_DOCKER_INSTALL=true ;;
     --build)
@@ -197,26 +187,24 @@ Usage: $0 [options]
 
 Core:
   (no args)                 Build + start full stack (ALL services; Grafana/MQTT off unless flags below)
-  --minimal                 Start minimal stack (db, bacnet-server, bacnet-scraper; add --with-grafana for Grafana)
+  --minimal                 Start minimal stack (db, bacnet-scraper, selene; add --with-grafana for Grafana)
   --mode MODE              Partial deployment mode: full, collector, model, engine (default: full)
   --with-grafana            Include Grafana (http://localhost:3000; optional SQL dashboards)
   --with-mqtt-bridge        Start Mosquitto + wire BACnet2MQTT env (experimental; future remote/MQTT use—not core product yet)
-  --with-mcp-rag            Include MCP RAG service (http://localhost:8090; retrieval over this repo docs + generated text + sparse-cloned upstream docs/ from open-fdd, diy-bacnet-server, easy-aso; see stack/mcp-rag/.vendor-docs/)
+  --with-mcp-rag            Include MCP RAG service (http://localhost:8090; retrieval over this repo docs + generated text + sparse-cloned upstream docs/ from open-fdd, rusty-bacnet, easy-aso; see stack/mcp-rag/.vendor-docs/)
   --doctor                  Read-only diagnostics: Docker, Compose, Python, argon2-cffi, paths (no stack changes). Exit 1 if critical checks fail.
   --verify                  Show running services + health checks (read-only; does not modify stack/.env or recreate containers)
-  --autofix-bacnet          Opt-in: with --verify, if host :8080 is OK but API→gateway fails, run hairpin repair (OFDD_BACNET_SERVER_URL + recreate api/bacnet-scraper). With a full stack bootstrap, runs the same repair after compose up (skipped if host gateway is down).
   --verify --test           Verify services then run tests; then exit
   --test                    Run tests only: frontend (lint + typecheck + vitest), backend (pytest), Caddy validate; then exit (no E2E/Selenium). Docker is optional (Caddy validate skipped if unavailable). Env OFDD_BOOTSTRAP_INSTALL_DEV=1 auto-creates .venv and pip install -e '.[dev]' when pytest is missing.
-  --update                  Git pull this AFDD stack repo + diy-bacnet-server (sibling), rebuild, restart (keeps DB)
-  --force-rebuild           With --update: always docker compose build (refreshes unpinned pip deps e.g. bacpypes3 even if git unchanged)
+  --update                  Git pull this AFDD stack repo, rebuild, restart (keeps DB)
+  --force-rebuild           With --update: always docker compose build (refreshes unpinned pip deps)
   --maintenance             Safe Docker prune only (NO volumes)
-  --diy-bacnet-tests        With --test (or after --update --test): run pytest in openfdd_bacnet_server against /app/tests
 
   Site maintenance:  $0 --maintenance --update --verify
 
 Build controls:
   --build SERVICE ...       Rebuild + restart only these services, then exit
-                           Services: api, bacnet-server, bacnet-scraper, caddy, db, fdd-loop, frontend, grafana, host-stats, mcp-rag, mosquitto, weather-scraper
+                           Services: api, bacnet-scraper, caddy, db, fdd-loop, frontend, grafana, host-stats, mcp-rag, mosquitto, selene, weather-scraper
   --build-all               Rebuild + restart all services, then exit
   --frontend                Before start: stop frontend, remove frontend node_modules volume (fresh npm install on next up; use after package.json changes)
 
@@ -246,10 +234,9 @@ Security:
   --password-stdin          Read Phase-1 app password from stdin.
                             (Alternative: set OFDD_APP_PASSWORD env var.)
 
-  BACnet gateway (diy-bacnet-server; host network — see https://github.com/bbartling/diy-bacnet-server ):
-                            Gateway BACnet name is fixed as open-fdd (not configurable).
-  --bacnet-instance N       Writes OFDD_BACNET_DEVICE_INSTANCE → --instance (compose default 3456788 if omitted).
-  --bacnet-address ADDR     Writes OFDD_BACNET_ADDRESS → --address (e.g. 192.168.204.11/24:47808): BACnet/IP UDP bind for bacpypes3 on the OT NIC (not the HTTP gateway URL).
+  BACnet driver (rusty-bacnet, embedded in the bacnet-scraper + api containers):
+  --bacnet-instance N       Writes OFDD_BACNET_DEVICE_INSTANCE (0-4194303). Required only when the driver needs to register itself as a local Device object (e.g. for COV subscriptions).
+  --bacnet-address ADDR     Writes OFDD_BACNET_INTERFACE (IPv4 the BACnet/IP socket binds; e.g. 192.168.204.11). Only the IPv4 is used; any /prefix or :port suffix is stripped for continuity with older invocations.
                             Without --caddy-self-signed: reverts Caddy to HTTP :80 (clears prior OPENFDD_CADDYFILE self-signed mode),
                             and sets OFDD_API_HOST_BIND=0.0.0.0 OFDD_FRONTEND_HOST_BIND=0.0.0.0 for LAN access to :8000 and :5173.
 
@@ -544,14 +531,6 @@ run_bootstrap_doctor() {
     echo "[INFO] stack/.env not yet created (bootstrap will create it)"
   fi
 
-  local sibling
-  sibling="$(cd "$REPO_ROOT/.." && pwd)/diy-bacnet-server"
-  if [[ -d "$sibling/.git" ]] || [[ -f "$sibling/bacpypes_server/main.py" ]]; then
-    echo "[OK]   diy-bacnet-server sibling: $sibling"
-  else
-    echo "[WARN] diy-bacnet-server not found beside this repo (bootstrap will clone if needed): $sibling"
-  fi
-
   echo ""
   if [[ "$fail" -gt 0 ]]; then
     echo "Doctor: $fail critical check(s) failed. Fix above, then: $0 --doctor"
@@ -616,27 +595,6 @@ write_edge_env() {
         echo ""
       fi
     fi
-    # diy-bacnet-server RPC Bearer (BACNET_RPC_API_KEY in compose); Open-FDD uses this on outbound RPC.
-    if ! grep -qE '^OFDD_BACNET_SERVER_API_KEY=.+' "$env_file" 2>/dev/null; then
-      local bac_key=""
-      if have_cmd openssl; then
-        bac_key=$(openssl rand -hex 32 2>/dev/null)
-      fi
-      if [[ -z "$bac_key" ]] && have_cmd python3; then
-        bac_key=$(python3 -c "import secrets; print(secrets.token_hex(32))" 2>/dev/null)
-      fi
-      if [[ -n "$bac_key" ]]; then
-        if grep -q "^OFDD_BACNET_SERVER_API_KEY=" "$env_file" 2>/dev/null; then
-          sed "${sed_i[@]}" "s|^OFDD_BACNET_SERVER_API_KEY=.*|OFDD_BACNET_SERVER_API_KEY=${bac_key}|" "$env_file"
-        else
-          echo "OFDD_BACNET_SERVER_API_KEY=${bac_key}" >> "$env_file"
-        fi
-        echo ""
-        echo "Generated OFDD_BACNET_SERVER_API_KEY=${bac_key}"
-        echo "diy-bacnet-server expects this as Bearer (BACNET_RPC_API_KEY in compose). Gateway Swagger: Authorize → paste this token."
-        echo ""
-      fi
-    fi
   fi
 
   # BACnet2MQTT: append defaults when --with-mqtt-bridge and keys not already in stack/.env
@@ -687,7 +645,7 @@ write_auth_env_if_requested() {
     else
       sed_i=(-i "")
     fi
-    for key in OFDD_APP_USER OFDD_APP_USER_HASH OFDD_JWT_SECRET OFDD_ACCESS_TOKEN_MINUTES OFDD_REFRESH_TOKEN_DAYS OFDD_API_KEY OFDD_BACNET_SERVER_API_KEY; do
+    for key in OFDD_APP_USER OFDD_APP_USER_HASH OFDD_JWT_SECRET OFDD_ACCESS_TOKEN_MINUTES OFDD_REFRESH_TOKEN_DAYS OFDD_API_KEY; do
       sed "${sed_i[@]}" "/^${key}=/d" "$auth_file" 2>/dev/null || true
     done
     return 0
@@ -860,48 +818,6 @@ infer_ipv4_default_route_src_linux() {
   return 1
 }
 
-# Older bootstraps set OFDD_BACNET_SERVER_URL=http://<OT-NIC>:8080 alongside OFDD_BACNET_ADDRESS — conflates BACnet/IP
-# (UDP bind for bacpypes3) with the HTTP JSON-RPC URL. If SERVER_URL matches the bind IPv4 on :8080, normalize.
-normalize_bacnet_server_url_when_mistaken_for_bind() {
-  local f="$STACK_DIR/.env" bind_ip cur_line cur_val lower want
-  [[ -f "$f" ]] || return 0
-  bind_ip="$(stack_env_bacnet_bind_ipv4 "$f" 2>/dev/null)" || return 0
-  cur_line=$(grep -E '^OFDD_BACNET_SERVER_URL=' "$f" 2>/dev/null | tail -1 || true)
-  [[ -n "$cur_line" ]] || return 0
-  cur_val="${cur_line#OFDD_BACNET_SERVER_URL=}"
-  cur_val="${cur_val//$'\r'/}"
-  cur_val="${cur_val//\"/}"
-  cur_val="${cur_val//\'}"
-  cur_val="${cur_val%/}"
-  lower="${cur_val,,}"
-  want="http://${bind_ip}:8080"
-  if [[ "$lower" == "${want,,}" ]]; then
-    env_file_set_kv "$f" "OFDD_BACNET_SERVER_URL" "http://host.docker.internal:8080"
-    echo "Normalized OFDD_BACNET_SERVER_URL (was ${want} — same IPv4 as OFDD_BACNET_ADDRESS; HTTP gateway is on the Docker host, not the BACnet/UDP bind). Using http://host.docker.internal:8080"
-    BOOTSTRAP_RECREATE_API_FRONTEND=true
-  fi
-  return 0
-}
-
-# The Linux Docker-hairpin repair was tied to the diy-bacnet-server HTTP gateway
-# on port 8080. Phase 2.5d retired that path — rusty-bacnet is embedded in the
-# scraper container and binds UDP/47808 directly via ``network_mode: host``.
-# These functions stay as no-ops so legacy CLI flags (``--autofix-bacnet``) do
-# not surface Python ImportErrors from references to deleted modules. Remove
-# the ``--autofix-bacnet`` flag and callers in a follow-up bootstrap cleanup.
-repair_stack_env_bacnet_server_url_for_docker_hairpin() {
-  return 1
-}
-
-openfdd_api_gateway_check_once() {
-  echo "BACnet gateway check: deprecated — rusty-bacnet runs in-process; nothing to probe."
-  return 0
-}
-
-bootstrap_maybe_autofix_bacnet_api_gateway() {
-  return 0
-}
-
 # Compose interpolates ${OPENFDD_CADDYFILE:-...} with shell env before stack/.env file values.
 # This script sources stack/.env early (RETENTION_*, etc.); keys removed later (e.g. disable_caddy_self_signed_config)
 # would otherwise stay exported and keep Caddy on Caddyfile.selfsigned + leave Swagger disabled.
@@ -971,26 +887,16 @@ apply_bacnet_gateway_cli_to_env() {
     BOOTSTRAP_RECREATE_BACNET=true
   fi
   if [[ -n "${BACNET_ADDRESS_CLI:-}" ]]; then
-    env_file_set_kv "$f" "OFDD_BACNET_ADDRESS" "$BACNET_ADDRESS_CLI"
-    echo "Wrote OFDD_BACNET_ADDRESS to stack/.env (BACnet/IP bind; dual-NIC / OT LAN)"
+    # rusty-bacnet accepts bind config via OFDD_BACNET_INTERFACE (not
+    # OFDD_BACNET_ADDRESS). The CLI still spells it ``--bacnet-address``
+    # for continuity; translate by stripping the ``/prefix:port`` suffix
+    # the old diy gateway used. Any operator who set a full
+    # ``addr/24:47808`` value will get just the IPv4 in OFDD_BACNET_INTERFACE.
+    local bind_ip="${BACNET_ADDRESS_CLI%%/*}"
+    bind_ip="${bind_ip%%:*}"
+    env_file_set_kv "$f" "OFDD_BACNET_INTERFACE" "$bind_ip"
+    echo "Wrote OFDD_BACNET_INTERFACE=$bind_ip to stack/.env (rusty-bacnet BACnet/IP bind)"
     BOOTSTRAP_RECREATE_BACNET=true
-    # DIY gateway runs with network_mode:host — HTTP :8080 is on the Docker host. API/scraper reach it via
-    # host.docker.internal (compose default), not via OT NIC IP in OFDD_BACNET_ADDRESS. Only normalize
-    # OFDD_BACNET_SERVER_URL when unset or still pointing at loopback / host.docker.internal (never overwrite
-    # an operator-chosen LAN or remote URL).
-    if [[ "$BACNET_ADDRESS_CLI" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/ ]]; then
-      local cur_url=""
-      cur_url=$(grep -E '^OFDD_BACNET_SERVER_URL=' "$f" 2>/dev/null | tail -1 | sed 's/^[^=]*=//' | tr -d '\r' || true)
-      cur_url="${cur_url//\"/}"
-      cur_url="${cur_url//\'}"
-      local lower="${cur_url,,}"
-      if [[ -z "$cur_url" ]] || [[ "$lower" == *"localhost"* ]] || [[ "$lower" == *"127.0.0.1"* ]] || [[ "$lower" == *"host.docker.internal"* ]]; then
-        env_file_set_kv "$f" "OFDD_BACNET_SERVER_URL" "http://host.docker.internal:8080"
-        echo "Set OFDD_BACNET_SERVER_URL=http://host.docker.internal:8080 (API → DIY on Docker host; OFDD_BACNET_ADDRESS is BACnet/IP bind only)."
-        echo "  If ./scripts/bootstrap.sh --verify still shows BACnet (API→gateway) timeout, set OFDD_BACNET_SERVER_URL manually (e.g. LAN :8080) or run: $0 --verify --autofix-bacnet"
-        BOOTSTRAP_RECREATE_API_FRONTEND=true
-      fi
-    fi
     # Standard no-TLS lab: expose API and frontend on all interfaces so LAN clients can use http://HOST:8000/docs and :5173.
     if ! $CADDY_SELF_SIGNED; then
       env_file_set_kv "$f" "OFDD_API_HOST_BIND" "0.0.0.0"
@@ -1177,31 +1083,6 @@ ensure_caddy_self_signed_tls() {
   echo "Operators: use https://localhost/ → BACnet tools (no Swagger required). Dev/advanced: https://localhost/bacnet/docs or :8080 on host."
 }
 
-ensure_diy_bacnet_sibling() {
-  local parent_dir sibling
-  parent_dir="$(cd "$REPO_ROOT/.." && pwd)"
-  sibling="$parent_dir/diy-bacnet-server"
-
-  if [[ -d "$sibling" ]]; then
-    return 0
-  fi
-
-  if ! have_cmd git; then
-    echo "Missing: git (required to clone diy-bacnet-server sibling)."
-    echo "Clone it manually:"
-    echo "  git clone $DIY_BACNET_REPO_URL $sibling"
-    exit 1
-  fi
-
-  echo "=== Cloning diy-bacnet-server (sibling of open-fdd-afdd-stack) ==="
-  (cd "$parent_dir" && git clone "$DIY_BACNET_REPO_URL" diy-bacnet-server) || {
-    echo "Clone failed. Clone manually:"
-    echo "  git clone $DIY_BACNET_REPO_URL $sibling"
-    exit 1
-  }
-  echo "Cloned: $sibling"
-}
-
 curl_retry() {
   local max_tries="${1:-5}"
   local sleep_sec="${2:-10}"
@@ -1248,9 +1129,9 @@ verify_tls_caddy_smoke() {
   if curl -sk -o "$tmp" -w "%{http_code}" \
     -X POST "$base/bacnet/server_hello" \
     -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","id":"0","method":"server_hello","params":{}}' | grep -qx 200; then
-    if grep -q '"result"' "$tmp" 2>/dev/null; then
-      echo "OK   $base/bacnet/server_hello (diy-bacnet over TLS path /bacnet)"
+    -d '{}' | grep -qx 200; then
+    if grep -q '"driver"' "$tmp" 2>/dev/null; then
+      echo "OK   $base/bacnet/server_hello (rusty-bacnet driver config echoed)"
     else
       echo "WARN $base/bacnet/server_hello — 200 but unexpected body"
     fi
@@ -1273,13 +1154,10 @@ verify_tls_caddy_smoke() {
     echo "FAIL $base/api/auth/login (HTTP $code; expected 401 JSON for bad password — if HTML, you are not hitting the API via Caddy)"
   fi
 
-  local api_key bacnet_key
+  local api_key
   api_key=""
-  bacnet_key=""
   [[ -f "$STACK_DIR/.env" ]] && api_key="$(grep -E '^OFDD_API_KEY=' "$STACK_DIR/.env" 2>/dev/null | cut -d= -f2- | tr -d '\r')" || true
-  [[ -f "$STACK_DIR/.env" ]] && bacnet_key="$(grep -E '^OFDD_BACNET_SERVER_API_KEY=' "$STACK_DIR/.env" 2>/dev/null | cut -d= -f2- | tr -d '\r')" || true
   api_key="${api_key#\"}"; api_key="${api_key%\"}"
-  bacnet_key="${bacnet_key#\"}"; bacnet_key="${bacnet_key%\"}"
 
   if [[ -n "$api_key" ]]; then
     code="$(curl -sk -o /dev/null -w "%{http_code}" "$base/api/sites" || true)"
@@ -1298,25 +1176,6 @@ verify_tls_caddy_smoke() {
     echo "SKIP machine Bearer check (OFDD_API_KEY empty in stack/.env)"
   fi
 
-  if [[ -n "$bacnet_key" ]]; then
-    code="$(curl -sk -o /dev/null -w "%{http_code}" -X POST "$base/bacnet/client_read_property" \
-      -H "Content-Type: application/json" -d '{}' || true)"
-    if [[ "$code" == "401" ]]; then
-      echo "OK   POST $base/bacnet/client_read_property without Bearer → 401 (BACNET_RPC_API_KEY enforced)"
-    else
-      echo "WARN POST .../client_read_property without Bearer → HTTP $code (expected 401 when key set)"
-    fi
-    code="$(curl -sk -o /dev/null -w "%{http_code}" -X POST "$base/bacnet/client_read_property" \
-      -H "Content-Type: application/json" -H "Authorization: Bearer $bacnet_key" -d '{}' || true)"
-    if [[ "$code" != "401" ]] && [[ "$code" != "403" ]]; then
-      echo "OK   POST .../client_read_property with Bearer → HTTP $code (auth accepted; 422/400 expected for empty body)"
-    else
-      echo "WARN POST .../client_read_property with Bearer → HTTP $code (expected not 401/403 when key matches)"
-    fi
-  else
-    echo "SKIP diy BACnet Bearer check (OFDD_BACNET_SERVER_API_KEY empty)"
-  fi
-
   h="$(curl -skI "$base/api/health" | tr -d '\r' || true)"
   if echo "$h" | grep -qi '^strict-transport-security:'; then
     echo "OK   HSTS present on $base/api/health response"
@@ -1329,7 +1188,6 @@ verify_tls_caddy_smoke() {
 }
 
 verify() {
-  local HOST_BACNET_OK=false
   echo "=== Services ==="
   docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null | head -15
   echo ""
@@ -1358,49 +1216,23 @@ verify() {
   fi
 
   echo ""
-  echo "=== Feature checks (BACnet + API, up to 5 tries / 10s apart) ==="
-  if curl_retry 5 10 -X POST http://localhost:8080/server_hello -H "Content-Type: application/json" \
-      -d '{"jsonrpc":"2.0","id":"0","method":"server_hello","params":{}}'; then
-    HOST_BACNET_OK=true
-    echo "BACnet: http://localhost:8080 (OK — server_hello responded)"
-    hello="$(curl -sf -X POST http://localhost:8080/server_hello -H "Content-Type: application/json" \
-      -d '{"jsonrpc":"2.0","id":"0","method":"server_hello","params":{}}' 2>/dev/null)" || true
-    if echo "$hello" | grep -q '"mqtt_bridge"'; then
-      if echo "$hello" | grep -q '"connected":true'; then
-        echo "MQTT bridge: connected to broker"
-      else
-        echo "MQTT bridge: enabled but disconnected (check broker and bacnet-server logs)"
-      fi
-    fi
-  else
-    echo "BACnet: http://localhost:8080 (not reachable or no response after 5 tries)"
-  fi
-
-  # Same hop the dashboard uses: API container → OFDD_BACNET_SERVER_URL (host curl alone is not enough).
+  echo "=== Feature checks (BACnet driver + API) ==="
+  # Phase 2.5d+: BACnet runs embedded in the API and scraper containers
+  # (rusty-bacnet, UDP/47808 via network_mode: host). POST /bacnet/server_hello
+  # on the API is a config echo — proving the driver module loaded, not
+  # that any BAS device is reachable. An empty-body 401/200 both mean
+  # "driver plumbing OK"; a connection error means the API is down.
   if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx openfdd_api; then
-    if openfdd_api_gateway_check_once; then
-      :
-    else
-      if $AUTOFIX_BACNET_GATEWAY && $HOST_BACNET_OK && repair_stack_env_bacnet_server_url_for_docker_hairpin; then
-        echo "=== Retrying BACnet (API→gateway) after --autofix-bacnet repair ==="
-        if openfdd_api_gateway_check_once; then
-          :
-        else
-          echo "BACnet (API→gateway): FAIL after auto-fix."
-          echo "  This is not a frontend rebuild issue: the UI asks the API, and the API still cannot open TCP to the DIY gateway."
-          echo "  If host.docker.internal, the bridge gateway, and your LAN IP all time out from the API container, the host is"
-          echo "  usually blocking or not routing Docker bridge → host :8080 (ufw/nftables/iptables FORWARD, rp_filter, or hairpin)."
-          echo "  See README (BACnet / Docker section). Quick checks: sudo ufw status; docker exec openfdd_api env | grep OFDD_BACNET_SERVER"
-        fi
-      else
-        echo "BACnet (API→gateway): FAIL (set OFDD_BACNET_SERVER_URL in stack/.env, firewall/routing, or OFDD_BACNET_SERVER_API_KEY; see README)"
-        if ! $AUTOFIX_BACNET_GATEWAY && $HOST_BACNET_OK; then
-          echo "  Optional: ./scripts/bootstrap.sh --verify --autofix-bacnet  or  ./scripts/bootstrap.sh --autofix-bacnet  (hairpin URL + recreate api/bacnet-scraper when host :8080 is up)."
-        fi
-      fi
-    fi
+    # IPv4 explicit: ``localhost`` often resolves to ``::1`` first and the
+    # API publishes on IPv4 only, so using 127.0.0.1 avoids a false FAIL.
+    code="$(curl -sk -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:8000/bacnet/server_hello" \
+      -H "Content-Type: application/json" -d '{}' 2>/dev/null || true)"
+    case "$code" in
+      200|401) echo "BACnet driver: API → rusty-bacnet (OK — /bacnet/server_hello returned HTTP $code)" ;;
+      *)       echo "BACnet driver: API → rusty-bacnet (FAIL — /bacnet/server_hello returned HTTP $code)" ;;
+    esac
   else
-    echo "BACnet (API→gateway): skip (openfdd_api not running)"
+    echo "BACnet driver: skip (openfdd_api not running)"
   fi
 
   if curl_retry 5 10 http://127.0.0.1:8000/health; then
@@ -1458,7 +1290,7 @@ ensure_mcp_rag_upstream_sparse_docs() {
   mkdir -p "$MCP_RAG_VENDOR_DOCS_ROOT"
   for tuple in \
     "https://github.com/bbartling/open-fdd.git|open-fdd" \
-    "https://github.com/bbartling/diy-bacnet-server.git|diy-bacnet-server" \
+    "https://github.com/jscott3201/rusty-bacnet.git|rusty-bacnet" \
     "https://github.com/bbartling/easy-aso.git|easy-aso"; do
     url="${tuple%%|*}"
     name="${tuple##*|}"
@@ -1503,7 +1335,7 @@ ensure_docs_text_and_rag_index() {
 
   echo "=== Building MCP RAG index ==="
   rag_extra_dirs=()
-  for name in open-fdd diy-bacnet-server easy-aso; do
+  for name in open-fdd rusty-bacnet easy-aso; do
     if [[ -d "${MCP_RAG_VENDOR_DOCS_ROOT}/${name}/docs" ]]; then
       rag_extra_dirs+=(--extra-docs-dir "${MCP_RAG_VENDOR_DOCS_ROOT}/${name}/docs")
     fi
@@ -1667,36 +1499,6 @@ verify_code_for_mode() {
   return $rc
 }
 
-# Pytest suite shipped with diy-bacnet-server (container has /app/tests after COPY).
-# Checks the container image, not the host venv (Open-FDD pytest uses .venv on the host separately).
-run_diy_bacnet_tests() {
-  echo "--- DIY BACnet server container (pytest tests/) ---"
-  if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx openfdd_bacnet_server; then
-    echo "DIY BACnet tests: skip (openfdd_bacnet_server not running)."
-    return 0
-  fi
-  if ! docker exec openfdd_bacnet_server sh -lc 'test -d /app/tests'; then
-    echo "DIY BACnet tests: FAIL — /app/tests not found in openfdd_bacnet_server (rebuild bacnet-server from diy-bacnet-server context)."
-    return 1
-  fi
-  if ! docker exec openfdd_bacnet_server sh -lc 'python3 -c "import pytest" 2>/dev/null'; then
-    echo "DIY BACnet tests: FAIL — pytest not importable in openfdd_bacnet_server (pip install dev/test deps in the DIY image)."
-    return 1
-  fi
-  if docker exec openfdd_bacnet_server sh -lc "cd /app && python3 -m pytest tests/ -q --tb=short"; then
-    echo "DIY BACnet container tests: OK"
-  else
-    echo "DIY BACnet container tests: FAIL (pytest ran; see output above)."
-    echo "  Manual: docker exec -w /app openfdd_bacnet_server python3 -m pytest tests/ -v --tb=short"
-    return 1
-  fi
-}
-
-run_optional_diy_bacnet_tests() {
-  $DIY_BACNET_TESTS || return 0
-  run_diy_bacnet_tests || return 1
-}
-
 run_verify_code_matrix_or_single() {
   if ! $MODE_EXPLICIT && [[ "$MODE" == "full" ]]; then
     echo "=== Running modular test matrix (collector, model, engine, full) ==="
@@ -1781,8 +1583,11 @@ print(json.dumps({
     'brick_ttl_dir': os.environ.get('OFDD_BRICK_TTL_DIR', 'config'),
     'bacnet_enabled': env('OFDD_BACNET_SCRAPE_ENABLED', True),
     'bacnet_scrape_interval_min': env('OFDD_BACNET_SCRAPE_INTERVAL_MIN', 1),
-    'bacnet_server_url': os.environ.get('OFDD_BACNET_SERVER_URL', 'http://localhost:8080'),
-    'bacnet_site_id': os.environ.get('OFDD_BACNET_SITE_ID', 'default'),
+    'bacnet_interface': os.environ.get('OFDD_BACNET_INTERFACE', '0.0.0.0'),
+    'bacnet_port': env('OFDD_BACNET_PORT', 47808),
+    'bacnet_broadcast_address': os.environ.get('OFDD_BACNET_BROADCAST_ADDRESS', '255.255.255.255'),
+    'bacnet_apdu_timeout_ms': env('OFDD_BACNET_APDU_TIMEOUT_MS', 6000),
+    'bacnet_device_instance': env('OFDD_BACNET_DEVICE_INSTANCE', None),
     'open_meteo_enabled': env('OFDD_OPEN_METEO_ENABLED', True),
     'open_meteo_interval_hours': env('OFDD_OPEN_METEO_INTERVAL_HOURS', 24),
     'open_meteo_latitude': env('OFDD_OPEN_METEO_LATITUDE', 41.88),
@@ -1792,7 +1597,7 @@ print(json.dumps({
     'open_meteo_site_id': om_site,
     'graph_sync_interval_min': env('OFDD_GRAPH_SYNC_INTERVAL_MIN', 5),
 }))
-" 2>/dev/null) || body="{\"rule_interval_hours\":0.1,\"lookback_days\":3,\"rules_dir\":\"stack/rules\",\"brick_ttl_dir\":\"config\",\"bacnet_enabled\":true,\"bacnet_scrape_interval_min\":1,\"bacnet_server_url\":\"http://localhost:8080\",\"bacnet_site_id\":\"default\",\"open_meteo_enabled\":true,\"open_meteo_interval_hours\":24,\"open_meteo_latitude\":41.88,\"open_meteo_longitude\":-87.63,\"open_meteo_timezone\":\"America/Chicago\",\"open_meteo_days_back\":3,\"open_meteo_site_id\":\"default\",\"graph_sync_interval_min\":5}"
+" 2>/dev/null) || body="{\"rule_interval_hours\":0.1,\"lookback_days\":3,\"rules_dir\":\"stack/rules\",\"brick_ttl_dir\":\"config\",\"bacnet_enabled\":true,\"bacnet_scrape_interval_min\":1,\"bacnet_interface\":\"0.0.0.0\",\"bacnet_port\":47808,\"bacnet_broadcast_address\":\"255.255.255.255\",\"bacnet_apdu_timeout_ms\":6000,\"open_meteo_enabled\":true,\"open_meteo_interval_hours\":24,\"open_meteo_latitude\":41.88,\"open_meteo_longitude\":-87.63,\"open_meteo_timezone\":\"America/Chicago\",\"open_meteo_days_back\":3,\"open_meteo_site_id\":\"default\",\"graph_sync_interval_min\":5}"
 
   if curl -sf -X PUT "$API_BASE/config" -H "Content-Type: application/json" "${curl_auth[@]}" -d "$body" >/dev/null 2>&1; then
     echo "  PUT /config OK (config stored in RDF)."
@@ -1912,14 +1717,12 @@ if $VERIFY_ONLY && ! $UPDATE_PULL_REBUILD; then
   if $VERIFY_CODE; then
     verify_code || exit 1
   fi
-  run_optional_diy_bacnet_tests || exit 1
   exit 0
 fi
 
 if $VERIFY_CODE; then
   check_prereqs_for_test_mode
   run_verify_code_matrix_or_single || exit 1
-  run_optional_diy_bacnet_tests || exit 1
   exit 0
 fi
 
@@ -1937,7 +1740,6 @@ BOOTSTRAP_RECREATE_API_FRONTEND=false
 
 write_edge_env
 apply_bacnet_gateway_cli_to_env
-normalize_bacnet_server_url_when_mistaken_for_bind
 
 if $CADDY_SELF_SIGNED && $CADDY_HTTP_ONLY; then
   echo "Choose at most one of --caddy-self-signed and --caddy-http-only."
@@ -1962,7 +1764,6 @@ reload_stack_env_after_writes
 bootstrap_maybe_open_ufw_http_lab
 
 check_prereqs
-ensure_diy_bacnet_sibling
 
 dc="$(docker_compose_cmd)"
 DC_PROFILE=()
@@ -1982,14 +1783,9 @@ bootstrap_compose_force_recreate_if_needed() {
   esac
   case "$MODE" in
     full|collector)
-      $BOOTSTRAP_RECREATE_BACNET && svcs+=(bacnet-server)
+      $BOOTSTRAP_RECREATE_BACNET && svcs+=(bacnet-scraper)
       ;;
   esac
-  if $WITH_MQTT_BRIDGE; then
-    case "$MODE" in
-      full|collector) svcs+=(bacnet-server) ;;
-    esac
-  fi
   ((${#svcs[@]} == 0)) && return 0
   local -a uniq=()
   mapfile -t uniq < <(printf '%s\n' "${svcs[@]}" | sort -u)
@@ -2017,12 +1813,9 @@ fi
 # -----------------------------
 if $UPDATE_PULL_REBUILD; then
   echo "=== Update: git pull + rebuild (TimescaleDB retained) ==="
-  DIY_BACNET="$REPO_ROOT/../diy-bacnet-server"
 
   PRE_OPENFDD=""
-  PRE_BACNET=""
   [[ -d "$REPO_ROOT/.git" ]] && PRE_OPENFDD=$(cd "$REPO_ROOT" && git rev-parse HEAD 2>/dev/null) || true
-  [[ -d "$DIY_BACNET/.git" ]] && PRE_BACNET=$(cd "$DIY_BACNET" && git rev-parse HEAD 2>/dev/null) || true
 
   if [[ -d "$REPO_ROOT/.git" ]]; then
     echo "Pulling open-fdd-afdd-stack..."
@@ -2031,22 +1824,12 @@ if $UPDATE_PULL_REBUILD; then
     echo "Skipping stack git pull (not a git repo)."
   fi
 
-  if [[ -d "$DIY_BACNET/.git" ]]; then
-    echo "Pulling diy-bacnet-server (sibling)..."
-    (cd "$DIY_BACNET" && git pull --rebase 2>/dev/null || git pull 2>/dev/null) || true
-  else
-    echo "Skipping diy-bacnet-server git pull (sibling not found or not a git repo)."
-  fi
-
   POST_OPENFDD=""
-  POST_BACNET=""
   [[ -d "$REPO_ROOT/.git" ]] && POST_OPENFDD=$(cd "$REPO_ROOT" && git rev-parse HEAD 2>/dev/null) || true
-  [[ -d "$DIY_BACNET/.git" ]] && POST_BACNET=$(cd "$DIY_BACNET" && git rev-parse HEAD 2>/dev/null) || true
 
   SKIP_BUILD=false
   if ! $UPDATE_FORCE_REBUILD; then
-    if [[ -n "$PRE_OPENFDD" && -n "$POST_OPENFDD" && "$PRE_OPENFDD" == "$POST_OPENFDD" ]] && \
-       [[ -n "$PRE_BACNET" && -n "$POST_BACNET" && "$PRE_BACNET" == "$POST_BACNET" ]]; then
+    if [[ -n "$PRE_OPENFDD" && -n "$POST_OPENFDD" && "$PRE_OPENFDD" == "$POST_OPENFDD" ]]; then
       SKIP_BUILD=true
     fi
   fi
@@ -2086,7 +1869,6 @@ if $UPDATE_PULL_REBUILD; then
     echo ""
     echo "=== Post-update tests (--test) ==="
     run_verify_code_matrix_or_single || exit 1
-    run_optional_diy_bacnet_tests || exit 1
   fi
   if ! $VERIFY_ONLY && ! $RUN_TESTS_AFTER_UPDATE; then
     echo "  Verify: ./scripts/bootstrap.sh --verify"
@@ -2147,7 +1929,9 @@ fi
 # -----------------------------
 # Default run (NO ARGS): FULL STACK
 # -----------------------------
-# Ensure bridge env vars are in stack/.env so bacnet-server gets them (server_hello will show mqtt_bridge)
+# MQTT bridge is scaffolding for future integrations; keep the .env
+# seeding so the broker is ready when a bridge lands (independent of
+# the retired BACnet2MQTT feature that ran in diy-bacnet-server).
 if $WITH_MQTT_BRIDGE; then
   ensure_mqtt_bridge_env_defaults "$STACK_DIR/.env"
 fi
@@ -2161,8 +1945,8 @@ if [[ "$MODE" == "full" || "$MODE" == "model" ]]; then
 fi
 
 if [[ "$MODE" == "collector" ]]; then
-  echo "=== Starting collector mode (DB + BACnet server + scraper) ==="
-  svc="db bacnet-server bacnet-scraper"
+  echo "=== Starting collector mode (DB + SeleneDB + BACnet scraper) ==="
+  svc="db selene bacnet-scraper"
   $WITH_GRAFANA && svc="$svc grafana"
   $dc "${DC_PROFILE[@]}" up -d --build $svc
 elif [[ "$MODE" == "model" ]]; then
@@ -2182,17 +1966,6 @@ cd "$REPO_ROOT"
 
 wait_for_postgres_or_die
 apply_migrations_best_effort
-
-if [[ "$MODE" == "full" ]] && $AUTOFIX_BACNET_GATEWAY; then
-  echo ""
-  echo "=== Optional BACnet API→gateway autofix (--autofix-bacnet) ==="
-  if curl -sf --max-time 3 -X POST http://127.0.0.1:8080/server_hello -H "Content-Type: application/json" \
-      -d '{"jsonrpc":"2.0","id":"0","method":"server_hello","params":{}}' >/dev/null 2>&1; then
-    bootstrap_maybe_autofix_bacnet_api_gateway || true
-  else
-    echo "Skipping BACnet autofix: DIY gateway not reachable on http://127.0.0.1:8080 (same precondition as verify HOST_BACNET_OK)."
-  fi
-fi
 
 if [[ "$MODE" == "full" || "$MODE" == "model" ]]; then
   echo ""

@@ -6,18 +6,31 @@ has_children: true
 
 # BACnet
 
-BACnet is the **default data driver** for Open-FDD. Discovery, [diy-bacnet-server](https://github.com/bbartling/diy-bacnet-server), and the BACnet scraper are documented here. **Swagger (diy-bacnet-server):** http://localhost:8080/docs
+BACnet is the **default data driver** for Open-FDD. Discovery and scraping are handled by an embedded [rusty-bacnet](https://github.com/jscott3201/rusty-bacnet) driver (PyO3 bindings to an ASHRAE 135-2020 stack written in Rust). There is no separate gateway container — the API and scraper both talk to the BACnet/IP network directly over UDP 47808.
 
 ---
 
 ## Setup (do this before the platform scrapes data) {#setup}
 
-**Recommended: data model**
+1. **Start the platform** — e.g. `./scripts/bootstrap.sh`. The `bacnet-scraper` container runs under the `selene` compose profile with `network_mode: host` so rusty-bacnet can bind UDP 47808 on the host NIC that reaches your BAS.
+2. **Discover devices** — `POST /bacnet/whois_range` broadcasts Who-Is and returns the I-Am responders. Each device is upserted into SeleneDB as a `:bacnet_device` node.
+3. **Enumerate objects** — `POST /bacnet/point_discovery_to_graph` reads a single device's `object-list`, enriches each object (name, description, units), and persists them as `:bacnet_object` nodes linked to the device via `exposesObject` edges. Each object carries a `concept_curie` pointing at a [Mnemosyne](https://github.com/jscott3201/selenepack-smartbuildings) BACnet concept.
+4. **Create application points** — add `:point` nodes via the Sites/Equipment/Points CRUD API, then bind objects to points with a `protocolBinding` edge (property defaults to `present_value`).
+5. **Scraper runs automatically** — on the configured interval the scraper walks `:bacnet_object`→`:protocolBinding`→`:point` bindings and writes samples via SeleneDB `ts_write`. Per-device failures are isolated; one flaky device doesn't stall the loop.
 
-1. **Start the platform** (including diy-bacnet-server) — e.g. `./scripts/bootstrap.sh`.
-2. **Discover devices and points** — In the Config UI (`/app/`) use the BACnet panel: Who-Is range, then Point discovery per device. Or call the API: `POST /bacnet/whois_range`, `POST /bacnet/point_discovery`.
-3. **Graph and data model** — Call **POST /bacnet/point_discovery_to_graph** (device instance) to put BACnet devices and points into the in-memory graph and sync `config/data_model.ttl`. Create points in the DB via CRUD (set `bacnet_device_id`, `object_identifier`, `object_name`) or use **GET /data-model/export** → LLM/human tagging → **PUT /data-model/import**.
-4. **Scraper runs automatically** — The bacnet-scraper container runs `python -m openfdd_stack.platform.drivers.run_bacnet_scrape`; it loads BACnet addresses from the knowledge graph (`points`) and polls only those. Configuration is via the frontend and data model only.
+---
+
+## Configuration
+
+Driver bind and timeout knobs live in [Configuration](../configuration):
+
+- `OFDD_BACNET_INTERFACE` (default `0.0.0.0`)
+- `OFDD_BACNET_PORT` (default `47808`)
+- `OFDD_BACNET_BROADCAST_ADDRESS` (default `255.255.255.255`)
+- `OFDD_BACNET_APDU_TIMEOUT_MS` (default `6000`)
+- `OFDD_BACNET_DEVICE_INSTANCE` (optional — register this node as a Device on the network; required for COV subscriptions)
+- `OFDD_BACNET_SCRAPE_ENABLED` (toggle — set `false` to idle the scraper without tearing down the container)
+- `OFDD_BACNET_SCRAPE_INTERVAL_MIN` (default `5`)
 
 ---
 
@@ -26,7 +39,12 @@ BACnet is the **default data driver** for Open-FDD. Discovery, [diy-bacnet-serve
 | Page | Description |
 |------|-------------|
 | [BACnet graph context](graph_context) | What the graph must expose for BACnet-backed verification and rules. |
-| [BACnet-to-fault verification](fault_verification) | Evidence chain from fake devices through RPC, SPARQL, rules, to faults. |
-| [DIY BACnet gateway RPC contract](gateway_rpc_contract) | JSON-RPC envelope for `client_read_property` and similar calls. |
+| [BACnet-to-fault verification](fault_verification) | Evidence chain from fake devices through reads, SPARQL, rules, to faults. |
 
 Example SPARQL files for modeling checks live under `openclaw/bench/sparql/` in the repository (not on this docs site).
+
+---
+
+## BACnet/SC (future)
+
+The driver's `Transport` abstraction has a `BipTransport` implementation today and will grow an `ScTransport` for [BACnet/SC (Secure Connect)](https://www.ashrae.org/technical-resources/bookstore/bacnet) via rusty-bacnet's WebSocket client. See the queued 2.5e slice in the graph milestone for status.

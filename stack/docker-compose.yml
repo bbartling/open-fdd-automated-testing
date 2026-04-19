@@ -20,12 +20,9 @@ services:
   # BACnet scraper — rusty-bacnet embedded driver (Phase 2.5d rewrite).
   # Binds UDP/47808 directly on the host (via ``network_mode: host``)
   # and reads :bacnet_object→:point bindings from SeleneDB each interval.
-  # Writes samples via ``ts_write`` to SeleneDB, so the scraper is
-  # gated on the same ``selene`` profile — starting it without Selene
-  # would be a no-op (no plan to load, nowhere to write).
+  # Writes samples via ``ts_write`` to SeleneDB; both this service and
+  # ``selene`` come up on a default ``docker compose up``.
   bacnet-scraper:
-    profiles:
-      - selene
     build:
       context: ..
       dockerfile: stack/Dockerfile.bacnet_scraper
@@ -91,14 +88,11 @@ services:
       driver: json-file
       options: *log-opts
 
-  # SeleneDB — graph + time-series + vector + RDF in one runtime (Phase 1, opt-in).
-  # Starts under `--profile selene`; activate via bootstrap --with-selene (to be added) or
-  # `docker compose --profile selene up`. Default stack still runs against TimescaleDB
-  # until the strangler flag (OFDD_STORAGE_BACKEND=selene) is flipped and data-path
-  # migration phases 2–3 land. See graph Milestone 10167.
+  # SeleneDB — graph + time-series + vector + RDF in one runtime.
+  # First-class service: the BACnet driver and scrape loop read/write
+  # exclusively here. TimescaleDB coexists for the FDD loop's historical
+  # reads until Phase 3 lands; both are up on a default bootstrap.
   selene:
-    profiles:
-      - selene
     image: ghcr.io/jscott3201/selenedb:v1.0.0
     container_name: openfdd_selene
     # Loopback-bound until Phase 4. QUIC (4510/udp) exposed for future federation.
