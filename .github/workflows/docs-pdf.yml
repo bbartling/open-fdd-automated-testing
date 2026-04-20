@@ -2,9 +2,12 @@
 
 name: Docs PDF
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   push:
-    branches: [main, master]
+    branches: [master]
     paths:
       - "docs/**"
       - "scripts/build_docs_pdf.py"
