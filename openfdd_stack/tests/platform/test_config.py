@@ -128,3 +128,37 @@ def test_platform_settings_overlay(monkeypatch):
 
     set_config_overlay({})
     monkeypatch.delenv("OFDD_BACNET_SERVER_URL", raising=False)
+
+
+def test_config_display_preserves_zero_rule_interval():
+    """GET /config normalization must not rewrite explicit 0.0 to default 3.0."""
+    from openfdd_stack.platform.api.config import _normalize_config_for_display
+
+    body = _normalize_config_for_display({"rule_interval_hours": 0.0, "lookback_days": 2})
+    assert body["rule_interval_hours"] == 0.0
+    assert body["lookback_days"] == 2
+
+
+def test_put_get_round_trip_allows_zero_rule_interval():
+    """PUT /config with 0.0 persists and returns 0.0 on GET-style response."""
+    from unittest.mock import patch
+
+    from openfdd_stack.platform.api.config import ConfigBody, get_config, put_config
+
+    set_config_overlay({})
+    with patch("openfdd_stack.platform.api.config.set_config_in_graph") as _set_graph, patch(
+        "openfdd_stack.platform.api.config.write_ttl_to_file", return_value=(True, None)
+    ), patch("openfdd_stack.platform.api.config.get_config_from_graph", return_value={}):
+        put_config(ConfigBody(rule_interval_hours=0.5))
+        body_half = get_config()
+        assert body_half["rule_interval_hours"] == 0.5
+
+        put_config(ConfigBody(rule_interval_hours=0.0))
+        body_zero = get_config()
+        assert body_zero["rule_interval_hours"] == 0.0
+
+        # Ensure persisted payload saw explicit 0.0 rather than defaulting back to 3.0.
+        last_persisted = _set_graph.call_args_list[-1].args[0]
+        assert last_persisted["rule_interval_hours"] == 0.0
+
+    set_config_overlay({})

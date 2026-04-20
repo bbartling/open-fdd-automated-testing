@@ -85,7 +85,8 @@ def _normalize_config_for_display(raw: dict) -> dict:
     ``host.docker.internal`` URL — operators and UI drift from reality.
     """
     out = dict(raw)
-    if out.get("rule_interval_hours") in (0, None):
+    # Preserve explicit zero; default only when key is truly missing/unset.
+    if out.get("rule_interval_hours") is None:
         out["rule_interval_hours"] = 3.0
     if out.get("bacnet_gateways") == "string":
         out["bacnet_gateways"] = ""

@@ -26,6 +26,11 @@ The script `examples/cloud_export.py` calls standard Open-FDD download and analy
 
 All requests use date range and optional `site_id`; the API docs at `/docs` list full parameters.
 
+Operational notes:
+- Fault/analytics date params are date-only (`YYYY-MM-DD`), not full datetimes.
+- `/download/faults` and `/analytics/fault-summary` are historical exports; repeated equipment rows/counts can be correct when one rule evaluates multiple points.
+- `/download/faults` exposes point identity fields when available from evidence (`point_id`, `external_id`, `object_identifier`, `object_name`) so downstream systems can distinguish per-point events.
+
 ---
 
 ## Run the example

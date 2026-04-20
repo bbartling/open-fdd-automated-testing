@@ -277,6 +277,69 @@ def test_download_faults_200_csv():
     assert "default" in body
 
 
+def test_download_faults_identity_columns_from_evidence_csv_and_json():
+    """When evidence includes point identity, export includes those fields for CSV and JSON."""
+    rows = [
+        {
+            "ts": "2024-01-15 10:00:00",
+            "site_id": "default",
+            "equipment_id": "AHU-1",
+            "fault_id": "bad_sensor_flag",
+            "flag_value": 1,
+            "evidence": {
+                "point_id": "pt-123",
+                "external_id": "SA-T",
+                "object_identifier": "analog-input,2",
+                "object_name": "Supply Air Temp",
+            },
+        },
+    ]
+    conn = _mock_conn(fetchall=rows)
+    with patch("openfdd_stack.platform.api.download.get_conn", side_effect=lambda: conn):
+        r_csv = client.get(
+            "/download/faults?start_date=2024-01-01&end_date=2024-01-31&format=csv"
+        )
+    assert r_csv.status_code == 200
+    csv_body = r_csv.text
+    assert "point_id" in csv_body
+    assert "external_id" in csv_body
+    assert "object_identifier" in csv_body
+    assert "object_name" in csv_body
+    assert "pt-123" in csv_body
+    assert "SA-T" in csv_body
+    assert "analog-input,2" in csv_body
+    assert "Supply Air Temp" in csv_body
+
+    conn2 = _mock_conn(fetchall=rows)
+    with patch("openfdd_stack.platform.api.download.get_conn", side_effect=lambda: conn2):
+        r_json = client.get(
+            "/download/faults?start_date=2024-01-01&end_date=2024-01-31&format=json"
+        )
+    assert r_json.status_code == 200
+    out = r_json.json()
+    row = out["faults"][0]
+    assert row["point_id"] == "pt-123"
+    assert row["external_id"] == "SA-T"
+    assert row["object_identifier"] == "analog-input,2"
+    assert row["object_name"] == "Supply Air Temp"
+
+
+def test_download_faults_rejects_datetime_query_values():
+    """Contract: /download/faults accepts date-only query params, not full datetimes."""
+    r = client.get(
+        "/download/faults?start_date=2026-04-20T11:00:00Z&end_date=2026-04-21T11:00:00Z&format=json"
+    )
+    assert r.status_code == 422
+    errors = (
+        (r.json().get("error") or {})
+        .get("details", {})
+        .get("errors", [])
+    )
+    assert isinstance(errors, list)
+    assert any("start_date" in str(d.get("loc", "")) for d in errors if isinstance(d, dict))
+    assert any("zero time" in str(d.get("msg", "")).lower() for d in errors if isinstance(d, dict))
+
+
 def test_download_faults_200_json():
     """Faults JSON: 200, faults array and count for API/cloud integration."""
     rows = [

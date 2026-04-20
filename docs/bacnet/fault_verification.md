@@ -45,6 +45,8 @@ The target verification chain is:
      - `/faults/state`
      - `/faults/active`
      - frontend fault views when useful
+   - interpret endpoints correctly: `/faults/active` is current snapshot; `/download/faults` and `/analytics/fault-summary` are historical and may contain repeated equipment rows when multiple points trigger the same rule
+   - on fake bench windows, expect flatline activity in UTC minute **10-49** and bounds activity in UTC minute **50-54**
 
 6. **Result is classified clearly** — PASS, FAIL, or INCONCLUSIVE
 

@@ -29,6 +29,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from openfdd_stack.platform.config import get_platform_settings
+from openfdd_stack.platform.config import set_config_overlay
+from openfdd_stack.platform.graph_model import get_config_from_graph, load_from_file
 from openfdd_stack.platform.loop import run_fdd_loop
 from openfdd_stack.platform.site_resolver import resolve_site_uuid
 
@@ -39,6 +41,30 @@ def setup_logging(verbose: bool = False) -> None:
     fmt = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(level=level, format=fmt, datefmt="%Y-%m-%d %H:%M:%S")
+
+
+def _runtime_loop_settings() -> tuple[float, int, int, str | None]:
+    """Read current runtime config for one loop cycle.
+
+    Returns: (interval_hours, sleep_seconds, lookback_days, trigger_path).
+    Values come from get_platform_settings() so graph/config updates are used
+    without restarting the fdd-loop container.
+    """
+    # fdd-loop is a separate process from the API, so refresh graph-backed config
+    # from the shared TTL before reading settings.
+    try:
+        load_from_file()
+        set_config_overlay(get_config_from_graph())
+    except Exception:
+        # Keep loop running with env defaults if TTL parse/read fails.
+        pass
+
+    settings = get_platform_settings()
+    interval_hours = float(getattr(settings, "rule_interval_hours", 3.0))
+    sleep_sec = max(60, int(interval_hours * 3600))  # avoid tight loop
+    lookback_days = int(getattr(settings, "lookback_days", 3))
+    trigger_path = getattr(settings, "fdd_trigger_file", None)
+    return interval_hours, sleep_sec, lookback_days, trigger_path
 
 
 def main() -> int:
@@ -61,11 +87,7 @@ def main() -> int:
     setup_logging(args.verbose)
     log = logging.getLogger("open_fdd.fdd_loop")
 
-    settings = get_platform_settings()
-    interval_hours = float(settings.rule_interval_hours)
-    lookback_days = settings.lookback_days
-
-    def _run() -> int:
+    def _run(lookback_days: int) -> int:
         settings = get_platform_settings()
         # Run Open-Meteo fetch when FDD runs so weather is fresh for rules (same interval, graph-driven).
         if getattr(settings, "open_meteo_enabled", True):
@@ -117,19 +139,19 @@ def main() -> int:
             return 1
 
     if args.loop:
-        sleep_sec = max(60, int(interval_hours * 3600))  # min 60s to avoid tight loop
+        interval_hours, sleep_sec, lookback_days, trigger_path = _runtime_loop_settings()
         log.info(
             "FDD loop started: every %.2f h (%d s), lookback %d days (touch %s to run now)",
             interval_hours,
             sleep_sec,
             lookback_days,
-            getattr(settings, "fdd_trigger_file", "config/.run_fdd_now")
-            or "config/.run_fdd_now",
+            trigger_path or "config/.run_fdd_now",
         )
-        trigger_path = getattr(settings, "fdd_trigger_file", None)
 
         while True:
-            _run()
+            # Reload runtime config each cycle so GET/PUT /config changes apply without restart.
+            interval_hours, sleep_sec, lookback_days, trigger_path = _runtime_loop_settings()
+            _run(lookback_days=lookback_days)
             elapsed = 0
             while elapsed < sleep_sec:
                 nap = min(TRIGGER_POLL_SEC, sleep_sec - elapsed)
@@ -155,7 +177,8 @@ def main() -> int:
                         elapsed = 0  # reset timer
             log.info("Next run in %.2f h", interval_hours)
     else:
-        return _run()
+        _, _, lookback_days, _ = _runtime_loop_settings()
+        return _run(lookback_days=lookback_days)
 
 
 if __name__ == "__main__":

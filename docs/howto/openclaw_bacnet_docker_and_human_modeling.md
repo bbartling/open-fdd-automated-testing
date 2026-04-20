@@ -153,6 +153,20 @@ Replace **`$API_KEY`** with **`OFDD_API_KEY`** from `stack/.env`. Base **`http:/
 
 ---
 
+### 2e) What the AI should ask the human first (`stack/.env` handoff)
+
+When OpenClaw runs as its own container and drives Open-FDD over HTTP, ask the human for a minimal handoff from `stack/.env`:
+
+- required: `OFDD_API_KEY`
+- required: base URL (`http://<host>/api` via Caddy, or `http://<host>:8000` direct)
+- optional for BACnet diagnostics: `OFDD_BACNET_SERVER_URL`, `OFDD_BACNET_SERVER_API_KEY`, `OFDD_BACNET_ADDRESS`
+
+This avoids guesswork (`localhost`, `openfdd_api:8080`, random bridge IPs) and keeps the AI on the proven LAN path.
+
+**Do not** paste full `.env` files into chat logs. Provide only the needed keys/values for the current task.
+
+---
+
 ## 3) Human operator path (React) — discovery, export JSON, tags, re-import
 
 OpenClaw should know operators often work in the **UI** first; agents can mirror the same APIs.

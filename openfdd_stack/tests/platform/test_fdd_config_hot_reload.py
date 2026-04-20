@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from openfdd_stack.platform.config import set_config_overlay
+from openfdd_stack.platform.drivers.run_rule_loop import _runtime_loop_settings
 
 
 @pytest.fixture(autouse=True)
@@ -89,3 +90,44 @@ def test_rules_api_and_loop_resolve_same_path_for_relative_rules_dir():
     assert (
         api_resolved == expected
     ), "GET /rules and FDD loop must resolve the same rules dir (API uses same repo_root logic)"
+
+
+def test_runtime_loop_settings_reads_overlay_values():
+    """Loop scheduling values come from current platform config (no restart required)."""
+    with patch(
+        "openfdd_stack.platform.drivers.run_rule_loop.load_from_file"
+    ) as _load, patch(
+        "openfdd_stack.platform.drivers.run_rule_loop.get_config_from_graph"
+    ) as _cfg:
+        _cfg.return_value = {
+            "rule_interval_hours": 0.0,
+            "lookback_days": 7,
+            "fdd_trigger_file": "config/custom.trigger",
+        }
+        interval, sleep_sec, lookback, trigger = _runtime_loop_settings()
+    assert interval == 0.0
+    assert sleep_sec == 60  # floor to 60s for safety, even when interval is 0.0
+    assert lookback == 7
+    assert trigger == "config/custom.trigger"
+
+
+def test_runtime_loop_settings_picks_up_config_changes_between_calls():
+    """Subsequent calls observe updated /config overlay values."""
+    with patch(
+        "openfdd_stack.platform.drivers.run_rule_loop.load_from_file"
+    ) as _load, patch(
+        "openfdd_stack.platform.drivers.run_rule_loop.get_config_from_graph"
+    ) as _cfg:
+        _cfg.side_effect = [
+            {"rule_interval_hours": 3.0, "lookback_days": 3},
+            {"rule_interval_hours": 0.5, "lookback_days": 1},
+        ]
+        first = _runtime_loop_settings()
+        second = _runtime_loop_settings()
+
+    assert first[0] == 3.0
+    assert first[1] == 10800
+    assert first[2] == 3
+    assert second[0] == 0.5
+    assert second[1] == 1800
+    assert second[2] == 1

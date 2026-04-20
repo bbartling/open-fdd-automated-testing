@@ -142,6 +142,14 @@ If you see a **constant flat line** (usually flat at 1):
 - **FDD run frequency:** Fault results are written when the FDD loop runs (e.g. every `rule_interval_hours`). To see the fault only when the condition is true, ensure the loop runs multiple times in your range and the rule actually evaluates to 0 sometimes; otherwise every bucket may show 1.
 - **Check the API:** `curl -s "http://localhost:8000/analytics/fault-timeseries?site_id=YOUR_SITE&start_date=2026-03-01&end_date=2026-03-08&bucket=hour"` — you should see multiple `series` entries with different `time` values when the fault fires in different hours.
 
+**How to read historical fault rows on the fake bench:**
+
+- `/faults/active` is a **current snapshot** (what is active now).
+- `/download/faults` and `/analytics/fault-summary` are **historical** over your date window.
+- One rule can emit multiple historical rows/counts for one equipment when several points match in that window.
+- Fake schedule reference: flatline window is UTC minute **10-49**, bounds window is UTC minute **50-54**; repeated AHU rows during those windows are expected if multiple tagged points participate.
+- `/download/faults` now includes point identity columns when available in evidence (`point_id`, `external_id`, `object_identifier`, `object_name`). If those are empty for a row, treat it as equipment-level-only context.
+
 ---
 
 ## Logs

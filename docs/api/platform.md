@@ -245,10 +245,11 @@ Export fault results for MSI/cloud integration. Poll this endpoint (e.g. cron) t
 
 **Response:**
 
-- **CSV:** `200 OK` — attachment `openfdd_faults_{start}_{end}.csv` (ts, site_id, equipment_id, fault_id, flag_value, evidence).
-- **JSON:** `200 OK` — `{"faults": [...], "count": N}`.
+- **CSV:** `200 OK` — attachment `openfdd_faults_{start}_{end}.csv` with `timestamp`, `site_id`, `equipment_id`, `fault_id`, `flag_value`, optional point identity columns (`point_id`, `external_id`, `object_identifier`, `object_name` when present in evidence), and `evidence`.
+- **JSON:** `200 OK` — `{"faults": [...], "count": N}` with the same optional point identity fields when available.
 
 `404` if site_id provided and not found.
+`422` if `start_date`/`end_date` are not date-only values (`YYYY-MM-DD`).
 
 ---
 
@@ -276,8 +277,8 @@ Fault counts by fault_id. For dashboards and cloud integration.
 
 | Query param | Type   | Required | Description |
 |-------------|--------|----------|-------------|
-| start_date  | date   | yes      | Start of range |
-| end_date    | date   | yes      | End of range |
+| start_date  | date   | yes      | Start of range (`YYYY-MM-DD`) |
+| end_date    | date   | yes      | End of range (`YYYY-MM-DD`) |
 | site_id     | string | no       | Site name or UUID; omit for all sites |
 
 **Response:** `200 OK` — `{"site_id": "...", "period": {"start": "...", "end": "..."}, "by_fault_id": [{"fault_id": "...", "count": N, "flag_sum": M}, ...], "total_faults": N}`.

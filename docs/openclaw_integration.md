@@ -111,6 +111,41 @@ Bench and helper scripts treat Open‑FDD like any other REST client: they read 
 
 ---
 
+## 1f) AI operator handoff (`stack/.env`) for MCP/HTTP workers
+
+For AI-assisted data-modeling workers (OpenClaw or MCP clients), the fastest reliable startup is:
+
+1. Human runs Open-FDD stack and confirms host URL.
+2. Human provides required values from `stack/.env` **out of band** (chat/secret manager), not by committing secrets.
+3. Agent uses those values for REST calls and BACnet proxy checks.
+
+**Minimum values the agent should request from the human:**
+
+- `OFDD_API_KEY` (Bearer for Open-FDD REST automation)
+- host base URL (for example `http://192.168.204.18/api` through Caddy, or `http://192.168.204.18:8000` direct API)
+
+**BACnet troubleshooting values (request only when needed):**
+
+- `OFDD_BACNET_SERVER_URL` (API -> diy-gateway route)
+- `OFDD_BACNET_SERVER_API_KEY` (gateway Bearer used by Open-FDD API)
+- `OFDD_BACNET_ADDRESS` (BACnet/IP bind context; not the HTTP API URL)
+
+**Recommended agent startup check sequence:**
+
+1. `GET /health` with `Authorization: Bearer <OFDD_API_KEY>`
+2. `GET /bacnet/gateways`
+3. `POST /bacnet/server_hello`
+4. `GET /data-model/export` -> LLM tagging -> `PUT /data-model/import`
+5. `POST /data-model/sparql` for validation
+
+**Security posture for agents:**
+
+- Ask for only the keys needed for current tasks.
+- Never write `.env` contents to logs/reports/PR comments.
+- Prefer passing values as runtime env vars in the OpenClaw container, not hard-coding them in prompts or scripts.
+
+---
+
 ## 2) Automated Brick tagging loop
 
 For automated tagging, use the same underlying workflow as manual export/import:

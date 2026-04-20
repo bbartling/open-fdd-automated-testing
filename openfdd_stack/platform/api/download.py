@@ -29,6 +29,52 @@ router = APIRouter(
 _EXCEL_BOM = "\ufeff"
 
 
+def _evidence_get_text(obj: dict | None, *keys: str) -> str | None:
+    """Return first non-empty string value for any key from evidence dict."""
+    if not isinstance(obj, dict):
+        return None
+    for k in keys:
+        v = obj.get(k)
+        if v is None:
+            continue
+        s = str(v).strip()
+        if s:
+            return s
+    return None
+
+
+def _fault_identity_from_evidence(evidence: object) -> dict[str, str | None]:
+    """Extract point/sensor identity hints from evidence JSON when present."""
+    if not isinstance(evidence, dict):
+        return {
+            "point_id": None,
+            "external_id": None,
+            "object_identifier": None,
+            "object_name": None,
+        }
+    point = evidence.get("point") if isinstance(evidence.get("point"), dict) else {}
+    source = evidence.get("source") if isinstance(evidence.get("source"), dict) else {}
+    sensor = evidence.get("sensor") if isinstance(evidence.get("sensor"), dict) else {}
+    return {
+        "point_id": _evidence_get_text(evidence, "point_id")
+        or _evidence_get_text(point, "id", "point_id")
+        or _evidence_get_text(source, "point_id")
+        or _evidence_get_text(sensor, "point_id"),
+        "external_id": _evidence_get_text(evidence, "external_id", "point_external_id")
+        or _evidence_get_text(point, "external_id", "name", "point_name")
+        or _evidence_get_text(source, "external_id", "name")
+        or _evidence_get_text(sensor, "external_id", "name"),
+        "object_identifier": _evidence_get_text(evidence, "object_identifier", "oid")
+        or _evidence_get_text(point, "object_identifier", "oid")
+        or _evidence_get_text(source, "object_identifier", "oid")
+        or _evidence_get_text(sensor, "object_identifier", "oid"),
+        "object_name": _evidence_get_text(evidence, "object_name")
+        or _evidence_get_text(point, "object_name")
+        or _evidence_get_text(source, "object_name")
+        or _evidence_get_text(sensor, "object_name"),
+    }
+
+
 def _to_excel_csv(df: pd.DataFrame) -> str:
     """CSV with UTF-8 BOM and ISO timestamps in UTC (Z) so Plots/frontend and Excel parse correctly.
     Without Z, JS parses timestamps in implementation-defined way and DST can show wrong hour (e.g. 8:02
@@ -260,6 +306,7 @@ def get_download_faults(
                     if hasattr(row["ts"], "isoformat")
                     else str(row["ts"])
                 )
+            row.update(_fault_identity_from_evidence(row.get("evidence")))
             data.append(row)
         return JSONResponse(
             content={"faults": data, "count": len(data)},
@@ -272,6 +319,11 @@ def get_download_faults(
     if not df.empty:
         df["ts"] = pd.to_datetime(df["ts"])
         df = df.rename(columns={"ts": "timestamp"})
+        ids = df["evidence"].apply(_fault_identity_from_evidence)
+        ids_df = pd.DataFrame(ids.tolist())
+        for c in ("point_id", "external_id", "object_identifier", "object_name"):
+            if c in ids_df.columns:
+                df[c] = ids_df[c]
         # Excel/Sheets-friendly: timestamp on left, clean column order (like BAS trend export)
         col_order = [
             "timestamp",
@@ -279,6 +331,10 @@ def get_download_faults(
             "equipment_id",
             "fault_id",
             "flag_value",
+            "point_id",
+            "external_id",
+            "object_identifier",
+            "object_name",
             "evidence",
         ]
         df = df[[c for c in col_order if c in df.columns]]

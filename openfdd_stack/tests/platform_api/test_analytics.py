@@ -48,6 +48,21 @@ def test_fault_summary_404_unknown_site():
     assert r.status_code == 404
 
 
+def test_fault_summary_rejects_datetime_query_values():
+    r = client.get(
+        "/analytics/fault-summary?start_date=2026-04-20T11:00:00Z&end_date=2026-04-21T11:00:00Z"
+    )
+    assert r.status_code == 422
+    errors = (
+        (r.json().get("error") or {})
+        .get("details", {})
+        .get("errors", [])
+    )
+    assert isinstance(errors, list)
+    assert any("start_date" in str(d.get("loc", "")) for d in errors if isinstance(d, dict))
+    assert any("zero time" in str(d.get("msg", "")).lower() for d in errors if isinstance(d, dict))
+
+
 def test_fault_timeseries_returns_shape():
     with patch("openfdd_stack.platform.api.analytics.get_conn") as mock_conn:
         conn = MagicMock()
@@ -71,6 +86,21 @@ def test_fault_timeseries_returns_shape():
     assert data["bucket"] == "hour"
     assert len(data["series"]) == 2
     assert data["series"][0]["metric"] == "fc1" and data["series"][0]["value"] == 1.0
+
+
+def test_fault_timeseries_rejects_datetime_query_values():
+    r = client.get(
+        "/analytics/fault-timeseries?start_date=2026-04-20T11:00:00Z&end_date=2026-04-21T11:00:00Z&bucket=hour"
+    )
+    assert r.status_code == 422
+    errors = (
+        (r.json().get("error") or {})
+        .get("details", {})
+        .get("errors", [])
+    )
+    assert isinstance(errors, list)
+    assert any("start_date" in str(d.get("loc", "")) for d in errors if isinstance(d, dict))
+    assert any("zero time" in str(d.get("msg", "")).lower() for d in errors if isinstance(d, dict))
 
 
 def test_fault_timeseries_invalid_bucket_rejected():

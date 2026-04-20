@@ -89,6 +89,11 @@ On Linux use `http://172.17.0.1:8000` or your host IP if host.docker.internal is
 4. **GET /download/csv** — timeseries wide-format CSV
 5. **GET /analytics/fault-summary** — fault counts by fault_id
 
+Notes for consumers:
+- Use date-only query params (`start_date`, `end_date`) in `YYYY-MM-DD` form for faults/analytics endpoints.
+- Historical endpoints can show repeated equipment rows/counts when one rule triggers across multiple points.
+- `/download/faults` includes point identity columns when available (`point_id`, `external_id`, `object_identifier`, `object_name`).
+
 Replace the `print()` calls with your cloud integration (Azure IoT Hub, AWS, SkySpark, custom REST, etc.).
 
 ---

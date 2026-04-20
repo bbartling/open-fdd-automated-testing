@@ -111,6 +111,13 @@ docker compose exec db psql -U postgres -d openfdd -c "SELECT ts, point_id, valu
 
 **Verify BACnet scraping:** `curl -s http://localhost:8000/timeseries/latest` (recent `ts` = data flowing). Scraper logs: `docker logs openfdd_bacnet_scraper --tail 30`. Full steps: [Verification — BACnet scraper](verification#validating-scrapers-and-fdd).
 
+**Fault API interpretation (fake bench):**
+
+- `/faults/active` = current snapshot only.
+- `/download/faults` and `/analytics/fault-summary` = historical rows/counts for the requested date window (date-only params: `YYYY-MM-DD`).
+- Repeated rows for one equipment are expected when one rule evaluates multiple points.
+- Fake bench windows: flatline UTC minute **10-49**; bounds UTC minute **50-54**.
+
 ---
 
 ## Logs
