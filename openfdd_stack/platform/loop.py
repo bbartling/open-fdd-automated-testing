@@ -308,7 +308,10 @@ def _results_with_provenance(
         if hasattr(t, "to_pydatetime"):
             t = t.to_pydatetime()
         for col in flag_cols:
-            if not row.get(col, 0):
+            val = row.get(col, 0)
+            if val is None or pd.isna(val):
+                continue
+            if not bool(val):
                 continue
             rule = rule_by_flag.get(col, {})
             inputs = rule.get("inputs") if isinstance(rule, dict) else {}

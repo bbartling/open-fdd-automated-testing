@@ -193,6 +193,9 @@ openclaw/logs/*.pid
 # Local auth bootstrap output (single-user credentials + jwt secret)
 stack/auth.env
 
+# Site-local memory overlays (keep framework docs, ignore local content)
+site_memory/local/
+
 # Timestamped copies from openclaw/bench/e2e/4_hot_reload_test.py if API cleanup misses (numeric suffix)
 stack/rules/test_sensor_bounds_[0-9]*.yaml
 stack/rules/test_sensor_flatline_[0-9]*.yaml

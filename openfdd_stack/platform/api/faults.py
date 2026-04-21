@@ -286,13 +286,16 @@ def list_bacnet_device_faults(
             )
             point_rows = cur.fetchall()
 
-            cur.execute(
-                """
-                SELECT fs.site_id, fs.equipment_id, fs.fault_id, fs.active
-                FROM fault_state fs
-                """
-            )
-            state_rows = cur.fetchall()
+            if _fault_state_table_exists(cur):
+                cur.execute(
+                    """
+                    SELECT fs.site_id, fs.equipment_id, fs.fault_id, fs.active
+                    FROM fault_state fs
+                    """
+                )
+                state_rows = cur.fetchall()
+            else:
+                state_rows = []
 
     rules_path = _rules_dir_resolved()
     rules = load_rules_from_dir(Path(rules_path)) if Path(rules_path).exists() else []

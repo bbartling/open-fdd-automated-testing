@@ -74,7 +74,7 @@ def test_faults_definitions_returns_list():
     assert isinstance(r.json(), list)
 
 
-def test_faults_bacnet_device_faults_infers_applicable_from_rule_brick_inputs():
+def test_faults_bacnet_device_faults_infers_applicable_from_rule_brick_inputs(tmp_path):
     point_rows = [
         {
             "point_id": "pt-1",
@@ -122,7 +122,10 @@ def test_faults_bacnet_device_faults_infers_applicable_from_rule_brick_inputs():
 
     with (
         patch("openfdd_stack.platform.api.faults.get_conn", return_value=conn),
-        patch("openfdd_stack.platform.api.faults._rules_dir_resolved", return_value="/tmp"),
+        patch(
+            "openfdd_stack.platform.api.faults._rules_dir_resolved",
+            return_value=str(tmp_path),
+        ),
         patch("open_fdd.engine.runner.load_rules_from_dir", return_value=fake_rules),
     ):
         r = client.get("/faults/bacnet-device-faults")
@@ -139,7 +142,9 @@ def test_faults_bacnet_device_faults_infers_applicable_from_rule_brick_inputs():
     assert matched[0]["external_id"] == "SA-T"
 
 
-def test_faults_bacnet_device_faults_maps_active_when_fault_state_uses_equipment_name():
+def test_faults_bacnet_device_faults_maps_active_when_fault_state_uses_equipment_name(
+    tmp_path,
+):
     point_rows = [
         {
             "point_id": "pt-1",
@@ -186,7 +191,10 @@ def test_faults_bacnet_device_faults_maps_active_when_fault_state_uses_equipment
 
     with (
         patch("openfdd_stack.platform.api.faults.get_conn", return_value=conn),
-        patch("openfdd_stack.platform.api.faults._rules_dir_resolved", return_value="/tmp"),
+        patch(
+            "openfdd_stack.platform.api.faults._rules_dir_resolved",
+            return_value=str(tmp_path),
+        ),
         patch("open_fdd.engine.runner.load_rules_from_dir", return_value=fake_rules),
     ):
         r = client.get("/faults/bacnet-device-faults?site_id=site-1")
@@ -199,7 +207,7 @@ def test_faults_bacnet_device_faults_maps_active_when_fault_state_uses_equipment
     assert sorted(row["active_fault_ids"]) == ["bad_sensor_flag", "flatline_flag"]
 
 
-def test_faults_bacnet_device_faults_active_mapping_is_device_id_agnostic():
+def test_faults_bacnet_device_faults_active_mapping_is_device_id_agnostic(tmp_path):
     dynamic_device_id = "998877"
     point_rows = [
         {
@@ -238,7 +246,10 @@ def test_faults_bacnet_device_faults_active_mapping_is_device_id_agnostic():
 
     with (
         patch("openfdd_stack.platform.api.faults.get_conn", return_value=conn),
-        patch("openfdd_stack.platform.api.faults._rules_dir_resolved", return_value="/tmp"),
+        patch(
+            "openfdd_stack.platform.api.faults._rules_dir_resolved",
+            return_value=str(tmp_path),
+        ),
         patch("open_fdd.engine.runner.load_rules_from_dir", return_value=fake_rules),
     ):
         r = client.get("/faults/bacnet-device-faults?site_id=site-x")
@@ -249,6 +260,52 @@ def test_faults_bacnet_device_faults_active_mapping_is_device_id_agnostic():
     row = data[0]
     assert row["bacnet_device_id"] == dynamic_device_id
     assert row["active_fault_ids"] == ["flatline_flag"]
+
+
+def test_faults_bacnet_device_faults_handles_missing_fault_state_table(tmp_path):
+    point_rows = [
+        {
+            "point_id": "pt-3",
+            "site_uuid": "site-z",
+            "site_name": "Building-Z",
+            "bacnet_device_id": "123123",
+            "equipment_id": "equip-z",
+            "equipment_name": "AHU-Z",
+            "equipment_type": "AHU",
+            "external_id": "SA-T",
+            "fdd_input": "sat",
+            "brick_type": "brick:Supply_Air_Temperature_Sensor",
+            "object_identifier": "analog-input,2",
+            "object_name": "SA-T",
+        }
+    ]
+
+    cursor = MagicMock()
+    cursor.fetchall.side_effect = [point_rows]
+    conn = MagicMock()
+    conn.__enter__ = MagicMock(return_value=conn)
+    conn.__exit__ = MagicMock(return_value=None)
+    conn.cursor.return_value.__enter__ = MagicMock(return_value=cursor)
+    conn.cursor.return_value.__exit__ = MagicMock(return_value=None)
+
+    fake_rules = [{"name": "bad_sensor_check", "flag": "bad_sensor_flag", "inputs": {}}]
+
+    with (
+        patch("openfdd_stack.platform.api.faults.get_conn", return_value=conn),
+        patch(
+            "openfdd_stack.platform.api.faults._rules_dir_resolved",
+            return_value=str(tmp_path),
+        ),
+        patch("openfdd_stack.platform.api.faults._fault_state_table_exists", return_value=False),
+        patch("open_fdd.engine.runner.load_rules_from_dir", return_value=fake_rules),
+    ):
+        r = client.get("/faults/bacnet-device-faults")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert isinstance(data, list) and len(data) == 1
+    assert data[0]["bacnet_device_id"] == "123123"
+    assert data[0]["active_fault_ids"] == []
 
 
 def test_faults_active_site_filter_matches_uuid_or_stored_name():
