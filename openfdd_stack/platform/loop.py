@@ -191,7 +191,7 @@ def _point_lookup_for_equipment(
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT p.id, p.external_id, p.object_identifier, p.object_name
+                SELECT p.id, p.external_id, p.fdd_input, p.bacnet_device_id, p.object_identifier, p.object_name
                 FROM points p
                 JOIN equipment e ON p.equipment_id = e.id
                 WHERE (p.site_id = %s OR p.site_id::text = %s)
@@ -200,19 +200,73 @@ def _point_lookup_for_equipment(
                 (site_id, site_id, equipment_id),
             )
             rows = cur.fetchall()
+    inverse_column_map: dict[str, str] = {}
+    for k, v in (column_map or {}).items():
+        ks = str(k or "").strip()
+        vs = str(v or "").strip()
+        if ks and vs and vs not in inverse_column_map:
+            inverse_column_map[vs] = ks
+
     lookup: dict[str, dict[str, str]] = {}
     for r in rows:
         external_id = (r.get("external_id") or "").strip()
         if not external_id:
             continue
+        fdd_input = (r.get("fdd_input") or "").strip()
         mapped_key = (column_map.get(external_id) or external_id).strip()
+        semantic_key = inverse_column_map.get(external_id, "").strip()
         meta = {
             "point_id": str(r.get("id") or "").strip(),
             "external_id": external_id,
+            "bacnet_device_id": str(r.get("bacnet_device_id") or "").strip(),
             "object_identifier": str(r.get("object_identifier") or "").strip(),
             "object_name": str(r.get("object_name") or "").strip(),
         }
-        for key in (external_id, mapped_key):
+        for key in (external_id, fdd_input, mapped_key, semantic_key):
+            if key and key not in lookup:
+                lookup[key] = meta
+    return lookup
+
+
+def _point_lookup_for_site(
+    site_id: str,
+    column_map: dict[str, str],
+) -> dict[str, dict[str, str]]:
+    """Build lookup keys -> point identity metadata for whole site fallback run."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT p.id, p.external_id, p.fdd_input, p.bacnet_device_id, p.object_identifier, p.object_name
+                FROM points p
+                WHERE (p.site_id = %s OR p.site_id::text = %s)
+                """,
+                (site_id, site_id),
+            )
+            rows = cur.fetchall()
+    inverse_column_map: dict[str, str] = {}
+    for k, v in (column_map or {}).items():
+        ks = str(k or "").strip()
+        vs = str(v or "").strip()
+        if ks and vs and vs not in inverse_column_map:
+            inverse_column_map[vs] = ks
+
+    lookup: dict[str, dict[str, str]] = {}
+    for r in rows:
+        external_id = (r.get("external_id") or "").strip()
+        if not external_id:
+            continue
+        fdd_input = (r.get("fdd_input") or "").strip()
+        mapped_key = (column_map.get(external_id) or external_id).strip()
+        semantic_key = inverse_column_map.get(external_id, "").strip()
+        meta = {
+            "point_id": str(r.get("id") or "").strip(),
+            "external_id": external_id,
+            "bacnet_device_id": str(r.get("bacnet_device_id") or "").strip(),
+            "object_identifier": str(r.get("object_identifier") or "").strip(),
+            "object_name": str(r.get("object_name") or "").strip(),
+        }
+        for key in (external_id, fdd_input, mapped_key, semantic_key):
             if key and key not in lookup:
                 lookup[key] = meta
     return lookup
@@ -505,12 +559,13 @@ def run_fdd_loop(
                             settings, strict=strict, column_map=column_map
                         ),
                     )
+                    point_lookup = _point_lookup_for_site(sid, column_map)
                     results = _results_with_provenance(
                         res,
                         sid,
                         site_name,
                         rules,
-                        point_lookup={},
+                        point_lookup=point_lookup,
                         timestamp_col="timestamp",
                     )
                     all_results.extend(results)

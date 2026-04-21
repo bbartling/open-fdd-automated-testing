@@ -114,6 +114,27 @@ export interface BacnetDevice {
   equipment_type: string | null;
 }
 
+export interface BacnetDeviceFaultApplicability {
+  site_id: string;
+  site_name: string;
+  bacnet_device_id: string;
+  equipment_ids: string[];
+  equipment_names: string[];
+  applicable_fault_ids: string[];
+  active_fault_ids: string[];
+  matched_points_by_fault: Record<
+    string,
+    {
+      point_id?: string | null;
+      external_id?: string | null;
+      fdd_input?: string | null;
+      brick_type?: string | null;
+      object_identifier?: string | null;
+      object_name?: string | null;
+    }[]
+  >;
+}
+
 export interface FddRunStatus {
   last_run: {
     run_ts: string;

@@ -9,6 +9,7 @@ import type {
   FaultResultsSeriesResponse,
   FaultResultsRawResponse,
   BacnetDevice,
+  BacnetDeviceFaultApplicability,
 } from "@/types/api";
 
 function buildSearchParams(params: Record<string, string | undefined>): string {
@@ -66,6 +67,20 @@ export function useBacnetDevices(siteId: string | undefined) {
           : "/faults/bacnet-devices",
       ),
     staleTime: 60 * 1000,
+  });
+}
+
+/** Deterministic configured/active faults per BACnet device from backend rule+model matching. */
+export function useBacnetDeviceFaults(siteId: string | undefined) {
+  return useQuery<BacnetDeviceFaultApplicability[]>({
+    queryKey: ["faults", "bacnet-device-faults", siteId ?? "all"],
+    queryFn: () =>
+      apiFetch<BacnetDeviceFaultApplicability[]>(
+        siteId
+          ? `/faults/bacnet-device-faults?site_id=${encodeURIComponent(siteId)}`
+          : "/faults/bacnet-device-faults",
+      ),
+    staleTime: 30 * 1000,
   });
 }
 

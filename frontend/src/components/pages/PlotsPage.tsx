@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useSiteContext } from "@/contexts/site-context";
 import { usePoints, useEquipment } from "@/hooks/use-sites";
-import { useFaultDefinitions, useFaultTimeseries, useFaultState } from "@/hooks/use-faults";
+import { useBacnetDeviceFaults, useFaultDefinitions, useFaultTimeseries, useFaultState } from "@/hooks/use-faults";
 import type { FaultDefinition } from "@/types/api";
 import { DateRangeSelect } from "@/components/site/DateRangeSelect";
 import type { DatePreset } from "@/components/site/DateRangeSelect";
@@ -110,6 +110,7 @@ export function PlotsPage() {
   const { data: points = [], isLoading: ptsLoading } = usePoints(selectedSiteId ?? undefined);
   const { data: equipment = [], isLoading: eqLoading } = useEquipment(selectedSiteId ?? undefined);
   const { data: faultState = [] } = useFaultState(selectedSiteId ?? undefined);
+  const { data: bacnetDeviceFaults = [] } = useBacnetDeviceFaults(selectedSiteId ?? undefined);
   const { data: faultDefinitions = [] } = useFaultDefinitions();
   const pollingPoints = useMemo(() => points.filter((p) => p.polling), [points]);
 
@@ -191,6 +192,15 @@ export function PlotsPage() {
   const faultIdsForDevice = useMemo(() => {
     if (!selectedDeviceId) return [];
     const set = new Set<string>();
+    const configured = bacnetDeviceFaults.find(
+      (d) => d.bacnet_device_id === selectedDeviceId,
+    );
+    for (const fid of configured?.applicable_fault_ids ?? []) {
+      if (fid) set.add(String(fid));
+    }
+    for (const fid of configured?.active_fault_ids ?? []) {
+      if (fid) set.add(String(fid));
+    }
     for (const f of faultState) {
       const fid = String(f.fault_id ?? "");
       if (!fid) continue;
@@ -202,7 +212,7 @@ export function PlotsPage() {
       if (onEquipment || onBacnet) set.add(fid);
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [faultState, selectedDeviceId, selectedDeviceEquipmentIds]);
+  }, [faultState, bacnetDeviceFaults, selectedDeviceId, selectedDeviceEquipmentIds]);
 
   const faultDefById = useMemo(() => {
     const m = new Map<string, FaultDefinition>();
@@ -557,12 +567,12 @@ export function PlotsPage() {
               disabled={faultIdsForDevice.length === 0}
               title={
                 faultIdsForDevice.length === 0
-                  ? "No fault state rows for this BACnet device yet. Run FDD or pick another device."
+                  ? "No applicable faults found from rule YAML + modeled points for this BACnet device."
                   : undefined
               }
             >
               {faultIdsForDevice.length === 0 ? (
-                <option value="">No faults linked to this device</option>
+                <option value="">No applicable faults found for this device</option>
               ) : (
                 faultIdsForDevice.map((faultId) => (
                   <option key={faultId} value={faultId}>
@@ -575,9 +585,9 @@ export function PlotsPage() {
         </div>
         {selectedDeviceId && faultIdsForDevice.length === 0 && (
           <p className="mt-2 text-xs text-muted-foreground">
-            Faults listed here come from fault state for this BACnet device (equipment link or matching{" "}
-            <span className="font-mono">bacnet_device_id</span>). If the list is empty, run an FDD job or confirm
-            faults are evaluated for points on this device.
+            Faults listed here are derived from rule YAML applicability + modeled points for this BACnet device
+            (with active fault state merged in). If empty, confirm point Brick types and rule inputs are modeled
+            for this device.
           </p>
         )}
         <div className="mt-3 flex flex-wrap items-center gap-2">
