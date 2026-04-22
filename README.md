@@ -227,6 +227,27 @@ pytest openfdd_stack/tests -v
 ```
 
 
+---
+
+## Dependencies
+
+* Python 3.12+
+* `open-fdd>=2.3.1`
+* `rdflib>=7.5.0,<8`
+* `pyparsing>=2.1.0,<3.2`
+* `pydantic>=2.4,<3`
+* `pydantic-settings>=2.2,<3`
+* `psycopg2-binary>=2.9.9`
+* `fastapi>=0.115,<1`
+* `python-multipart>=0.0.9`
+* `uvicorn[standard]>=0.30`
+* `httpx>=0.27`
+* `requests>=2.31`
+* `PyJWT>=2.8,<3`
+* `argon2-cffi>=23.1`
+* `docker>=7.0,<8`
+* `pip` + virtual environment tooling (`python3 -m venv`)
+* Docker (for container runs)
 
 
 ---
