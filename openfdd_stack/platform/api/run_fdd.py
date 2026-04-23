@@ -46,7 +46,7 @@ def trigger_run_fdd():
     **When fdd-loop runs with --loop:** Touches the trigger file; the loop picks it up
     within 60 seconds, runs immediately, and resets its interval.
 
-    **Standalone / no loop:** Run `python tools/run_rule_loop.py` for a one-shot.
+    **Standalone / no loop:** Run `python -m openfdd_stack.platform.drivers.run_rule_loop` for a one-shot.
     """
     settings = get_platform_settings()
     trigger_path = getattr(settings, "fdd_trigger_file", None) or "config/.run_fdd_now"

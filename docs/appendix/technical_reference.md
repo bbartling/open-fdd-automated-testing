@@ -36,13 +36,7 @@ open-fdd/
 │   └── caddy/             # Caddy only: [`stack/caddy/Caddyfile`](../../stack/caddy/Caddyfile) (minimal rev proxy; hardening TBD — [Security](../security))
 ├── config/                # data_model.ttl (Brick + BACnet + platform config)
 ├── scripts/               # bootstrap.sh; smoke_bacnet_api_to_gateway.sh (API→gateway); fake_*_faults.py
-├── tools/
-│   ├── discover_bacnet.py # Optional: BACnet discovery helper (bacpypes3); stack scrape is KG-driven
-│   ├── run_weather_fetch.py, run_rule_loop.py, run_host_stats.py  # BACnet: python -m openfdd_stack.platform.drivers.run_bacnet_scrape
-│   ├── graph_and_crud_test.py # Full CRUD + RDF + SPARQL e2e (see SPARQL cookbook)
-│   ├── bacnet_crud_smoke_test.py # Simple BACnet instance range + CRUD smoke test
-│   ├── trigger_fdd_run.py
-│   └── ...
+├── openfdd_stack/platform/drivers/  # run_weather_fetch, run_rule_loop, run_host_stats, trigger_fdd_run, run_bacnet_scrape
 └── examples/              # cloud_export, run_all_rules_brick, etc.
 ```
 
@@ -100,7 +94,7 @@ Used to build the PUT /config body at bootstrap; thereafter config is in the gra
 
 ## Unit tests
 
-Tests live under `open_fdd/tests/`. Run: `pytest open_fdd/tests/ -v`. All use in-process mocks; no shared DB or live API. For end-to-end (real API, optional BACnet): `python tools/graph_and_crud_test.py` (see [SPARQL cookbook](../modeling/sparql_cookbook)).
+Tests live under `open_fdd/tests/`. Run: `pytest open_fdd/tests/ -v`. All use in-process mocks; no shared DB or live API. For end-to-end checks, use the API/Frontend workflows in this guide plus [SPARQL cookbook](../modeling/sparql_cookbook).
 
 - **engine/** (PyPI `open-fdd`) — runner, checks; Brick TTL map: **platform/brick_ttl_resolver**
 - **platform/** — bacnet_api, bacnet_brick, bacnet_driver, config, crud_api, data_model_api, data_model_ttl, download_api, graph_model, rules_loader, site_resolver

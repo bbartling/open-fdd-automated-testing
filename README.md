@@ -16,34 +16,11 @@
 
 Open-FDD is an open-source knowledge graph fault-detection platform for HVAC systems that helps facilities optimize their energy usage and cost-savings. Because it runs on-prem, facilities never have to worry about a vendor hiking prices, going dark, or walking away with their data. The platform is an AFDD stack designed to run inside the building, behind the firewall, under the owner’s control. It transforms operational data into actionable, cost-saving insights and provides a secure integration layer that any cloud platform can use without vendor lock-in. U.S. Department of Energy research reports median energy savings of roughly 8–9% from FDD programs—meaningful annual savings depending on facility size and energy spend.
 
-Older material also ships as **`afdd_stack/`** in **[bbartling/open-fdd](https://github.com/bbartling/open-fdd)**. **This repository** is the canonical Docker + React stack, bootstrap, and stack docs (see links below). The **rules engine** library remains **[`open-fdd` on PyPI](https://pypi.org/project/open-fdd/)**.
-
 
 ---
 
-## Documentation
 
-
-* 📖 **[Stack Docs](https://bbartling.github.io/open-fdd-afdd-stack/)** — bootstrap, Docker, API, drivers, React UI
-* 📘 **[Engine Docs](https://bbartling.github.io/open-fdd/)** — RuleRunner, YAML rules, pandas ([repo](https://github.com/bbartling/open-fdd), [`open-fdd` PyPI](https://pypi.org/project/open-fdd/))
-* 📕 **[PDF Docs](https://github.com/bbartling/open-fdd/blob/master/pdf/open-fdd-docs.pdf)** — offline build: `python3 scripts/build_docs_pdf.py`
-* ✨ **[LLM Workflow](https://bbartling.github.io/open-fdd-afdd-stack/modeling/llm_workflow#copy-paste-prompt-template-recommended)** — export → tag → import
-* 🤖 **[Open-Claw](https://bbartling.github.io/open-fdd-afdd-stack/openclaw_integration)** — model context, MCP, API workflows
-
----
-
-## Quick Starts
-
-### Open-FDD Engine-only (rules engine, no Docker) PyPi
-
-If you only want the Python rules engine (without the full platform stack), you can use it in standard Python environments.
-
-```bash
-pip install open-fdd
-```
-
-
-### Open-FDD AFDD Platform Manually by the Human
+## The Open-FDD AFDD Platform 
 
 Open-FDD uses Docker and Docker Compose to orchestrate and manage all platform services within a unified containerized environment. The bootstrap script (`./scripts/bootstrap.sh`) is **Linux-only** and intended for IoT edge applications using Docker exclusively.
 
@@ -73,12 +50,12 @@ pip install argon2-cffi
 Clone the repository:
 
 ```bash
-git clone https://github.com/bbartling/open-fdd.git
+git clone https://github.com/bbartling/open-fdd-afdd-stack.git
 ```
 
 ### Standard HTTP bootstrap (no TLS) and app login
 
-The `--bacnet-address` value is the static **BACnet/IP (UDP)** bind for **bacpypes3** in diy-bacnet-server (**`OFDD_BACNET_ADDRESS`**, e.g. `192.168.204.18/24:47808`), which is the usual setup on operations technology (OT) LANs. It is **not** the same thing as **`OFDD_BACNET_SERVER_URL`**: the DIY gateway’s HTTP **:8080** listens on the **Docker host**, so the API and scraper default to **`http://host.docker.internal:8080`** (see Compose / `stack/.env`). Bootstrap supports **dual-NIC** hosts: use `--bacnet-address` on the OT interface; your other interface can use DHCP for outbound internet access.
+
 
 ```bash
 cd open-fdd-afdd-stack
@@ -112,115 +89,40 @@ printf '%s' 'YourSecurePassword' | ./scripts/bootstrap.sh \
 ```bash
 ./scripts/bootstrap.sh --doctor
 ./scripts/bootstrap.sh --verify
-./scripts/bootstrap.sh --smoke-bacnet-api-gateway   # same hop as scripts/smoke_bacnet_api_to_gateway.sh; alias: --smoke-bacnet-api
-./scripts/bootstrap.sh --verify --smoke-bacnet-api-gateway   # health checks then explicit API→gateway smoke
+
 ```
-
-If BACnet shows **API→gateway** timeout, on the host run **`./scripts/bootstrap.sh --smoke-bacnet-api-gateway`** or **`./scripts/smoke_bacnet_api_to_gateway.sh`** (same hop as **`./scripts/bootstrap.sh --verify`** BACnet line). If **`curl -X POST http://127.0.0.1:8080/server_hello`** with a JSON-RPC body works on the host but the smoke script fails, try **`./scripts/bootstrap.sh --verify --autofix-bacnet`** (opt-in hairpin repair) or set **`OFDD_BACNET_SERVER_URL`** in `stack/.env` per [BACnet overview](docs/bacnet/overview.md) and [OpenClaw + Docker BACnet](docs/howto/openclaw_bacnet_docker_and_human_modeling.md). A bare **GET** to `/server_hello` returns **405**; use **POST** with `{"jsonrpc":"2.0","id":"0","method":"server_hello","params":{}}`.
-
-Also available is the **partial stack** mode: `./scripts/bootstrap.sh --mode collector`, `--mode model`, or `--mode engine`. See the `Docs` below for more information.
-
-### Run tests (`--test`)
-
-Use the same bootstrap script for local verification (no separate CI recipe required on the machine):
-
-```bash
-cd open-fdd-afdd-stack
-./scripts/bootstrap.sh --test
-```
-
-This runs frontend lint, TypeScript `tsc`, Vitest, backend `pytest`, and Caddyfile validation when Docker is available. If Docker is missing or the daemon is not usable, Caddy validation is skipped; frontend and backend tests still run when Node/npm and Python (with dev deps) are available.
-
-Optional one-shot creation of `.venv` and `pip install -e ".[dev]"` when `pytest` is not installed:
-
-```bash
-OFDD_BOOTSTRAP_INSTALL_DEV=1 ./scripts/bootstrap.sh --test
-```
-
-Combine with health checks: `./scripts/bootstrap.sh --verify --test`.
 
 ---
 
+### Standard Maintenance
 
-## Optional: OpenClaw + MCP (AI-Assisted Data Modeling & FDD)
+Standard update procedures pull the latest versions of all applications, including the DIY BACnet Server, safely remove unused Docker container images, validate that the API and unit tests pass, and deploy the system with the MCP server running on the latest content.
 
-This section enables AI-assisted data modeling, tagging, and fault detection (FDD) using OpenClaw and the MCP (Model Context Protocol) service.
+Note that the username and password must be reconfigured, along with BACnet OT NIC settings and the BACnet instance ID for the Open FDD deployment at the specific site.
 
----
-
-### 1. Bootstrap AFDD stack with MCP enabled
 
 ```bash
 cd open-fdd-afdd-stack
 
 printf '%s' 'YourSecurePassword' | ./scripts/bootstrap.sh \
-  --bacnet-address 192.168.204.16/24:47808 \
-  --bacnet-instance 12345 \
+  --maintenance \
+  --update \
+  --verify \
+  --force-rebuild \
+  --test \
+  --diy-bacnet-tests \
   --user ben \
   --password-stdin \
-  --enable-mcp
+  --frontend \
+  --bacnet-address 192.168.204.18/24:47808 \
+  --bacnet-instance 123456 \
+  --with-mcp-rag
 ```
+
 
 The `--enable-mcp` flag starts the internal MCP/RAG service on port `8090`.
 
----
 
-### 2. Setup OpenClaw in a separate Docker container
-
-```bash
-git clone https://github.com/openclaw/openclaw.git
-cd openclaw
-chmod +x docker-setup.sh
-./docker-setup.sh
-```
-
-To access the OpenClaw terminal UI:
-
-```bash
-docker exec -it openclaw-openclaw-gateway-1 bash
-openclaw tui
-```
-
----
-
-### 3. Configure `.env` for Open-FDD access
-
-Edit:
-
-```bash
-open-fdd-afdd-stack/stack/.env
-```
-
-After bootstrapping, this file contains the API keys and access tokens required for the Open-FDD platform. These can be used by OpenClaw to interact with the system.
-
----
-
-### 4. Connect OpenClaw to the AFDD Docker network
-
-```bash
-docker network connect stack_default openclaw-openclaw-gateway-1
-```
-
-Verify the connection:
-
-```bash
-docker inspect openclaw-openclaw-gateway-1 \
-  --format '{{json .NetworkSettings.Networks}}'
-```
-
----
-
-### 5. Test MCP connectivity from OpenClaw
-
-Once connected, OpenClaw can access the MCP service at:
-
-```text
-http://openfdd_mcp_rag:8090
-```
-
-Alternatively, you can use the container IP address (e.g., `http://172.x.x.x:8090`).
-
----
 
 ### What this enables
 
@@ -245,9 +147,22 @@ MCP / RAG Service (openfdd_mcp_rag:8090)
 Open-FDD AFDD Stack (API + DB + BACnet)
 ```
 
+### OpenClaw execution boundaries (important)
+
+In many deployments, OpenClaw runs outside the Docker host shell and can only call exposed HTTP APIs.
+
+- OpenClaw **can** run API workflows (`/config`, `/sites`, `/data-model/*`, `/run-fdd`, analytics/download routes) when given the correct base URL and Bearer key.
+- OpenClaw **cannot** run host-local shell tasks like `./scripts/bootstrap.sh` unless it is granted host shell access.
+- If you need reset verification from OpenClaw-only mode, prefer API evidence and clearly separate:
+  - **API reset**: `POST /data-model/reset` (graph reset + stale active fault-state deactivation)
+  - **Full fault-history cleanup**: `POST /data-model/reset?clear_fault_history=true`
+  - **Host bootstrap reset path**: `./scripts/bootstrap.sh --reset-data` (calls the full cleanup endpoint above)
+
+For API-only agents, provide `OFDD_API_URL`/base URL and `OFDD_API_KEY` (Bearer) from `stack/.env`.
+
 ### Open Claw Model Routing Prompt
 
-Just drop this prompt right into Open Claw—it’s helped me avoid hitting API limits. I think it encourages the framework to use simple, low-cost models for easier tasks, while reserving more advanced (and expensive) models only for the tasks that truly require deeper reasoning.
+Just drop this prompt right into Open Claw—it’s helped me avoid hitting API limits. I think it encourages the framework to use simple, low-cost models for easier tasks, while reserving more advanced (and expensive) models only for the tasks that truly require deeper reasoning. Open Claw is currently being tested with the Open AI Codex subscription. 
 
 
 ```text
@@ -273,6 +188,29 @@ Always classify first, then process. Never use the thinking model for a task tha
 
 ---
 
+## Online Documentation
+
+This application is part of a broader ecosystem that together forms the **Open FDD AFDD Stack**, enabling a fully orchestrated, edge-deployable analytics and optimization platform for building automation systems.
+
+* 🔗 **DIY BACnet Server**
+  Lightweight BACnet server with JSON-RPC and MQTT support for IoT integrations.
+  [Documentation](https://bbartling.github.io/diy-bacnet-server/) · [GitHub](https://github.com/bbartling/diy-bacnet-server)
+
+* 📖 **Open FDD AFDD Stack**
+  Full AFDD framework with Docker bootstrap, API services, drivers, and React web UI.
+  [Documentation](https://bbartling.github.io/open-fdd-afdd-stack/) · [GitHub](https://github.com/bbartling/open-fdd-afdd-stack)
+
+* 📘 **Open FDD Fault Detection Engine**
+  Core rules engine with `RuleRunner`, YAML-based fault logic, and pandas workflows.
+  [Documentation](https://bbartling.github.io/open-fdd/) · [GitHub](https://github.com/bbartling/open-fdd) · [PyPI](https://pypi.org/project/open-fdd/)
+
+* ⚙️ **easy-aso Framework**
+  Lightweight framework for Automated Supervisory Optimization (ASO) algorithms at the IoT edge.
+  [Documentation](https://bbartling.github.io/easy-aso/) · [GitHub](https://github.com/bbartling/easy-aso) · [PyPI](https://pypi.org/project/easy-aso/0.1.7/)
+
+
+---
+
 
 ## Local development
 
@@ -287,6 +225,30 @@ pip install -e "/path/to/open-fdd[dev]"
 pip install -e ".[dev]"
 pytest openfdd_stack/tests -v
 ```
+
+
+---
+
+## Dependencies
+
+* Python 3.12+
+* `open-fdd>=2.3.1`
+* `rdflib>=7.5.0,<8`
+* `pyparsing>=2.1.0,<3.2`
+* `pydantic>=2.4,<3`
+* `pydantic-settings>=2.2,<3`
+* `psycopg2-binary>=2.9.9`
+* `fastapi>=0.115,<1`
+* `python-multipart>=0.0.9`
+* `uvicorn[standard]>=0.30`
+* `httpx>=0.27`
+* `requests>=2.31`
+* `PyJWT>=2.8,<3`
+* `argon2-cffi>=23.1`
+* `docker>=7.0,<8`
+* `pip` + virtual environment tooling (`python3 -m venv`)
+* Docker (for container runs)
+
 
 ---
 

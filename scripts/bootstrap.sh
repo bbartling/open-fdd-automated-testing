@@ -14,10 +14,6 @@
 #   ./scripts/bootstrap.sh --minimal            # DB + bacnet-server + bacnet-scraper only (add --with-grafana for Grafana)
 #   ./scripts/bootstrap.sh --verify             # health checks + ufw hints for 8080/tcp + 47808/udp (read-only; does not edit .env or recreate containers)
 #   ./scripts/bootstrap.sh --verify --verify-firewall-strict   # same, but exit 1 if ufw active and BACnet/gateway ports not ALLOW
-#   ./scripts/bootstrap.sh --smoke-bacnet-api-gateway   # only: docker exec openfdd_api → POST server_hello (same as scripts/smoke_bacnet_api_to_gateway.sh)
-#   ./scripts/bootstrap.sh --verify --smoke-bacnet-api-gateway   # verify then the same smoke hop (explicit OK line)
-#   ./scripts/bootstrap.sh --verify --autofix-bacnet   # same + optional BACnet hairpin repair when host gateway is up but API cannot reach it
-#   ./scripts/bootstrap.sh --autofix-bacnet ...        # with full stack: also run post-up BACnet hairpin repair (same helper as verify); omit for default (no .env rewrite)
 #   ./scripts/bootstrap.sh --test             # run tests: frontend (lint + typecheck + vitest), backend (pytest), Caddy validate; then exit. Does not run E2E/Selenium or long-running tests. Docker optional (skips Caddy validate if unavailable). OFDD_BOOTSTRAP_INSTALL_DEV=1 can auto-create .venv + pip install -e '.[dev]'.
 #   ./scripts/bootstrap.sh --update             # git pull this repo + diy-bacnet-server sibling, rebuild, restart (keeps DB)
 #   ./scripts/bootstrap.sh --maintenance        # safe prune only (NO volumes)
@@ -52,8 +48,6 @@ STACK_DIR="$REPO_ROOT/stack"
 # -----------------------------
 VERIFY_ONLY=false
 VERIFY_CODE=false
-# With --verify only: if BACnet API→gateway fails, rewrite OFDD_BACNET_SERVER_URL and recreate api (default: off; verify stays read-only).
-AUTOFIX_BACNET_GATEWAY=false
 # Set by check_prereqs_for_test_mode when docker is missing or unusable (Caddy validate skipped).
 SKIP_DOCKER_FOR_TESTS=0
 MINIMAL=false
@@ -73,8 +67,6 @@ DIY_BACNET_TESTS=false
 SYNC_DIY_BACNET_KEY=false
 # With --verify: if ufw is active and 8080/tcp or 47808/udp are not ALLOW, exit 1 (default: warn only).
 VERIFY_FIREWALL_STRICT=false
-# Same hop as scripts/smoke_bacnet_api_to_gateway.sh; combine with --verify or use alone.
-SMOKE_BACNET_API_GATEWAY=false
 DOCTOR_ONLY=false
 INSTALL_DOCKER=false
 SKIP_DOCKER_INSTALL=false
@@ -131,8 +123,6 @@ while [[ $i -lt ${#args[@]} ]]; do
   arg="${args[$i]}"
   case "$arg" in
     --verify) VERIFY_ONLY=true ;;
-    --smoke-bacnet-api-gateway|--smoke-bacnet-api) SMOKE_BACNET_API_GATEWAY=true ;;
-    --autofix-bacnet) AUTOFIX_BACNET_GATEWAY=true ;;
     --test) VERIFY_CODE=true ;;
     --minimal) MINIMAL=true ;;
     --mode)
@@ -234,10 +224,7 @@ Core:
   --with-mcp-rag            Include MCP RAG service (http://localhost:8090; retrieval over this repo docs + generated text + sparse-cloned upstream docs/ from open-fdd, diy-bacnet-server, easy-aso; see stack/mcp-rag/.vendor-docs/)
   --doctor                  Read-only diagnostics: Docker, Compose, Python, argon2-cffi, paths (no stack changes). Exit 1 if critical checks fail.
   --verify                  Show running services + health checks + ufw hints for 8080/tcp and 47808/udp (read-only; add --verify-firewall-strict to fail closed)
-  --smoke-bacnet-api-gateway  Run scripts/smoke_bacnet_api_to_gateway.sh only (openfdd_api → JSON-RPC server_hello); exit 0/1. Alias: --smoke-bacnet-api
-  --autofix-bacnet          Opt-in: with --verify, if host :8080 is OK but API→gateway fails, run hairpin repair (OFDD_BACNET_SERVER_URL + recreate api/bacnet-scraper). With a full stack bootstrap, runs the same repair after compose up (skipped if host gateway is down).
   --verify --test           Verify services then run tests; then exit
-  --verify --smoke-bacnet-api-gateway   After verify, run scripts/smoke_bacnet_api_to_gateway.sh (explicit OK/FAIL for API→gateway)
   --test                    Run tests only: frontend (lint + typecheck + vitest), backend (pytest), Caddy validate; then exit (no E2E/Selenium). Docker is optional (Caddy validate skipped if unavailable). Env OFDD_BOOTSTRAP_INSTALL_DEV=1 auto-creates .venv and pip install -e '.[dev]' when pytest is missing.
   --update                  Git pull this AFDD stack repo + diy-bacnet-server (sibling), rebuild, restart (keeps DB)
   --force-rebuild           With --update: always docker compose build (refreshes unpinned pip deps e.g. bacpypes3 even if git unchanged)
@@ -599,13 +586,6 @@ run_bootstrap_doctor() {
 
 if $DOCTOR_ONLY; then
   run_bootstrap_doctor
-fi
-
-# Standalone: same as ./scripts/smoke_bacnet_api_to_gateway.sh (not combined with --verify/--test/--update/--maintenance/--build).
-if $SMOKE_BACNET_API_GATEWAY && ! $VERIFY_ONLY && ! $VERIFY_CODE && ! $UPDATE_PULL_REBUILD && ! $MAINTENANCE_ONLY && [[ -z "$BUILD_SERVICES_STR" ]] && ! $BUILD_ALL; then
-  check_prereqs
-  bash "$REPO_ROOT/scripts/smoke_bacnet_api_to_gateway.sh"
-  exit $?
 fi
 
 write_edge_env() {
@@ -1669,21 +1649,7 @@ verify() {
     elif openfdd_api_gateway_check_once; then
       :
     else
-      if $AUTOFIX_BACNET_GATEWAY && $HOST_BACNET_OK && repair_stack_env_bacnet_server_url_for_docker_hairpin; then
-        echo "=== Retrying BACnet (API→gateway) after --autofix-bacnet repair ==="
-        if openfdd_api_gateway_check_once; then
-          :
-        else
-          echo "BACnet (API→gateway): FAIL after auto-fix."
-          echo "  First check host firewall and Docker→host :8080 (very often ufw missing 8080/tcp ALLOW, same class as BACnet UDP)."
-          echo "  Then: OFDD_BACNET_SERVER_URL, OFDD_BACNET_SERVER_API_KEY, FORWARD/hairpin. README (BACnet / Docker); docker exec openfdd_api env | grep OFDD_BACNET_SERVER"
-        fi
-      else
-        echo "BACnet (API→gateway): FAIL (OFDD_BACNET_SERVER_URL / OFDD_BACNET_SERVER_API_KEY / firewall; see README BACnet section)"
-        if ! $AUTOFIX_BACNET_GATEWAY && $HOST_BACNET_OK; then
-          echo "  Optional: ./scripts/bootstrap.sh --verify --autofix-bacnet (rewrites URL + recreates api/bacnet-scraper when host :8080 works)"
-        fi
-      fi
+      echo "BACnet (API→gateway): FAIL (OFDD_BACNET_SERVER_URL / OFDD_BACNET_SERVER_API_KEY / firewall; see README BACnet section)"
     fi
   else
     echo "BACnet (API→gateway): skip (openfdd_api not running)"
@@ -2126,14 +2092,14 @@ reset_data_via_api() {
     echo "  No sites to delete."
   fi
 
-  if curl -sf -X POST "$API_BASE/data-model/reset" -H "Content-Type: application/json" "${curl_auth[@]}" -d '{}' >/dev/null 2>&1; then
-    echo "  POST /data-model/reset OK."
+  if curl -sf -X POST "$API_BASE/data-model/reset?clear_fault_history=true" -H "Content-Type: application/json" "${curl_auth[@]}" -d '{}' >/dev/null 2>&1; then
+    echo "  POST /data-model/reset?clear_fault_history=true OK."
   else
     echo "  POST /data-model/reset failed."
     return 1
   fi
 
-  echo "Data model is now empty (no sites, no Brick triples, no BACnet)."
+  echo "Data model and fault history are now reset for a clean test bench start."
   return 0
 }
 
@@ -2195,11 +2161,6 @@ fi
 if $VERIFY_ONLY && ! $UPDATE_PULL_REBUILD; then
   check_prereqs
   verify
-  if $SMOKE_BACNET_API_GATEWAY; then
-    echo ""
-    echo "=== BACnet API→gateway smoke (scripts/smoke_bacnet_api_to_gateway.sh) ==="
-    bash "$REPO_ROOT/scripts/smoke_bacnet_api_to_gateway.sh" || exit 1
-  fi
   if $VERIFY_CODE; then
     verify_code || exit 1
   fi
@@ -2374,11 +2335,6 @@ if $UPDATE_PULL_REBUILD; then
   if $VERIFY_ONLY; then
     echo ""
     verify
-    if $SMOKE_BACNET_API_GATEWAY; then
-      echo ""
-      echo "=== BACnet API→gateway smoke (scripts/smoke_bacnet_api_to_gateway.sh) ==="
-      bash "$REPO_ROOT/scripts/smoke_bacnet_api_to_gateway.sh" || exit 1
-    fi
   fi
   if $RUN_TESTS_AFTER_UPDATE; then
     echo ""
@@ -2481,17 +2437,6 @@ cd "$REPO_ROOT"
 
 wait_for_postgres_or_die
 apply_migrations_best_effort
-
-if [[ "$MODE" == "full" ]] && $AUTOFIX_BACNET_GATEWAY; then
-  echo ""
-  echo "=== Optional BACnet API→gateway autofix (--autofix-bacnet) ==="
-  if curl -sf --max-time 3 -X POST http://127.0.0.1:8080/server_hello -H "Content-Type: application/json" \
-      -d '{"jsonrpc":"2.0","id":"0","method":"server_hello","params":{}}' >/dev/null 2>&1; then
-    bootstrap_maybe_autofix_bacnet_api_gateway || true
-  else
-    echo "Skipping BACnet autofix: DIY gateway not reachable on http://127.0.0.1:8080 (same precondition as verify HOST_BACNET_OK)."
-  fi
-fi
 
 if [[ "$MODE" == "full" || "$MODE" == "model" ]]; then
   echo ""

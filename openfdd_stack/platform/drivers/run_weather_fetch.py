@@ -13,8 +13,8 @@ stores in timeseries_readings. Points: temp_f, rh_pct, dewpoint_f, wind_mph,
 gust_mph, wind_dir_deg, shortwave_wm2, direct_wm2, diffuse_wm2, gti_wm2, cloud_pct.
 
 Usage:
-  python tools/run_weather_fetch.py
-  python tools/run_weather_fetch.py --loop
+  python -m openfdd_stack.platform.drivers.run_weather_fetch
+  python -m openfdd_stack.platform.drivers.run_weather_fetch --loop
 
 Config (GET /config or env): open_meteo_enabled, open_meteo_interval_hours,
   open_meteo_days_back, open_meteo_latitude, open_meteo_longitude,

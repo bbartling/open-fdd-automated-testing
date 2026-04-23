@@ -3,12 +3,12 @@
 Touch the FDD trigger file so the running loop (--loop) runs immediately and resets its timer.
 
 Usage:
-  python tools/trigger_fdd_run.py
-  python tools/trigger_fdd_run.py --path config/.run_fdd_now
+  python -m openfdd_stack.platform.drivers.run_trigger_fdd
+  python -m openfdd_stack.platform.drivers.run_trigger_fdd --path config/.run_fdd_now
 
 When the fdd-loop container is running with --loop, it checks for this file every 60 seconds.
 Create it from host: touch config/.run_fdd_now
-Or with Docker: docker compose -f platform/docker-compose.yml exec fdd-loop python tools/trigger_fdd_run.py
+Or with Docker: docker compose -f stack/docker-compose.yml exec fdd-loop python -m openfdd_stack.platform.drivers.run_trigger_fdd
 """
 
 import argparse

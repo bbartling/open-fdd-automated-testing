@@ -131,3 +131,63 @@ def test_runtime_loop_settings_picks_up_config_changes_between_calls():
     assert second[0] == 0.5
     assert second[1] == 1800
     assert second[2] == 1
+
+
+def test_run_fdd_loop_honors_equipment_types_plural_and_hot_reload(tmp_path):
+    """
+    Regression: rules may declare `equipment_types` (plural). Ensure run_fdd_loop
+    filters correctly and picks up create/delete edits each run.
+    """
+    set_config_overlay({"rules_dir": str(tmp_path.resolve())})
+    ttl_path = tmp_path / "data_model.ttl"
+    ttl_path.write_text(
+        "@prefix ofdd: <http://openfdd.local/ontology#> .\n",
+        encoding="utf-8",
+    )
+
+    load_return_sequence = [
+        [{"name": "meter_rule", "flag": "meter_flag", "equipment_types": ["Electric_Meter"]}],
+        [
+            {"name": "meter_rule", "flag": "meter_flag", "equipment_types": ["Electric_Meter"]},
+            {"name": "ahu_rule", "flag": "ahu_flag", "equipment_types": ["AHU"]},
+        ],
+        [{"name": "ahu_rule", "flag": "ahu_flag", "equipment_types": ["AHU"]}],
+    ]
+    seen_runner_rules: list[list[str]] = []
+
+    class _FakeRunner:
+        def __init__(self, rules):
+            seen_runner_rules.append([r.get("flag", "") for r in rules if isinstance(r, dict)])
+
+        def run(self, *_args, **_kwargs):
+            return []
+
+    with (
+        patch("openfdd_stack.platform.loop.get_conn", return_value=_mock_conn_no_sites()),
+        patch(
+            "open_fdd.engine.runner.load_rules_from_dir",
+            side_effect=load_return_sequence,
+        ),
+        patch("open_fdd.engine.runner.RuleRunner", side_effect=_FakeRunner),
+        patch(
+            "openfdd_stack.platform.brick_ttl_resolver.get_equipment_types_from_ttl",
+            return_value=["Electric_Meter"],
+        ),
+        patch(
+            "openfdd_stack.platform.brick_ttl_resolver.BrickTtlColumnMapResolver.build_column_map",
+            return_value={},
+        ),
+        patch("openfdd_stack.platform.loop._sync_fault_definitions_from_rules", lambda _r: None),
+        patch("openfdd_stack.platform.loop.get_ttl_path_resolved", return_value=str(ttl_path)),
+    ):
+        from openfdd_stack.platform.loop import run_fdd_loop
+
+        run_fdd_loop()
+        run_fdd_loop()
+        run_fdd_loop()
+
+    assert seen_runner_rules == [
+        ["meter_flag"],  # first run: meter rule only
+        ["meter_flag"],  # second run: ahu rule created, but filtered out
+        [],  # third run: meter rule deleted, no applicable rules left
+    ]

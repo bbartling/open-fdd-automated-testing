@@ -12,9 +12,9 @@ redundant fetches, do not run the standalone weather scraper (run_weather_fetch.
 when using this loop; use one or the other.
 
 Usage:
-  python tools/run_rule_loop.py           # one-shot (run now, exit)
-  python tools/run_rule_loop.py --loop   # scheduled loop (checks trigger file every 60s)
-  python tools/trigger_fdd_run.py        # touch trigger file → loop runs now + resets timer
+  python -m openfdd_stack.platform.drivers.run_rule_loop         # one-shot (run now, exit)
+  python -m openfdd_stack.platform.drivers.run_rule_loop --loop  # scheduled loop (checks trigger file every 60s)
+  python -m openfdd_stack.platform.drivers.run_trigger_fdd       # touch trigger file → loop runs now + resets timer
 
 When --loop: touch config/.run_fdd_now (or OFDD_FDD_TRIGGER_FILE) to run immediately
 and restart the interval. Useful after rule edits.

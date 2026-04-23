@@ -1371,26 +1371,86 @@ def data_model_check():
 # --- Reset: clear graph to DB-only (removes BACnet and orphans), then serialize ---
 
 
+def _deactivate_fault_state_without_valid_site(cur: Any) -> int:
+    """Deactivate active fault_state rows that no longer map to any current site id/name."""
+    cur.execute(
+        """
+        UPDATE fault_state
+        SET active = false,
+            last_changed_ts = NOW(),
+            last_evaluated_ts = NOW()
+        WHERE active = true
+          AND site_id NOT IN (
+            SELECT id::text FROM sites
+            UNION
+            SELECT name FROM sites
+          )
+        """
+    )
+    return int(cur.rowcount or 0)
+
+
+def _clear_fault_history_tables(cur: Any) -> dict[str, int]:
+    """Delete fault history/state tables for clean-slate test bench resets."""
+    counts: dict[str, int] = {}
+    cur.execute("DELETE FROM fault_events")
+    counts["fault_events_deleted"] = int(cur.rowcount or 0)
+    cur.execute("DELETE FROM fault_results")
+    counts["fault_results_deleted"] = int(cur.rowcount or 0)
+    cur.execute("DELETE FROM fault_state")
+    counts["fault_state_deleted"] = int(cur.rowcount or 0)
+    return counts
+
+
 @router.post(
     "/reset",
     summary="Reset graph to DB-only (clear BACnet and orphans; Brick repopulated from DB)",
     response_description="Status; graph is Brick-only after reset, file rewritten.",
 )
-def data_model_reset():
-    """Clear the in-memory graph and repopulate from DB only (Brick). Removes all BACnet triples and orphaned blank nodes, then writes config/data_model.ttl. Brick triples come from the database—so if the DB still has sites/equipment/points, the TTL will still contain them. To get an empty data model: delete all sites via CRUD (DELETE /sites/{id} for each; cascade removes equipment and points), then POST /data-model/reset."""
+def data_model_reset(
+    clear_fault_history: bool = Query(
+        False,
+        description="Also delete fault_state, fault_results, and fault_events for a true clean test-bench reset.",
+    ),
+):
+    """Clear the in-memory graph and repopulate from DB only (Brick). Removes all BACnet triples and orphaned blank nodes, then writes config/data_model.ttl. Brick triples come from the database—so if the DB still has sites/equipment/points, the TTL will still contain them. To get an empty data model: delete all sites via CRUD (DELETE /sites/{id} for each; cascade removes equipment and points), then POST /data-model/reset. By default, active fault_state rows for deleted sites are deactivated to avoid stale active fault drift; pass clear_fault_history=true to delete fault_state/fault_results/fault_events entirely."""
     reset_graph_to_db_only()
+    cleanup: dict[str, int] = {}
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            if clear_fault_history:
+                cleanup.update(_clear_fault_history_tables(cur))
+            else:
+                cleanup["fault_state_deactivated"] = (
+                    _deactivate_fault_state_without_valid_site(cur)
+                )
+        conn.commit()
+
     ok, err = write_ttl_to_file()
     status = get_serialization_status()
     if ok:
+        if clear_fault_history:
+            msg = (
+                "Graph reset to DB-only and fault history cleared "
+                "(fault_state, fault_results, fault_events)."
+            )
+        else:
+            msg = (
+                "Graph reset to DB-only. BACnet and orphans removed; Brick repopulated from database "
+                "(TTL still has whatever sites/equipment/points exist in DB). Active fault_state rows "
+                "for missing sites were deactivated; pass clear_fault_history=true to fully clear fault tables."
+            )
         return {
             "status": "ok",
             "path": str(get_platform_settings().brick_ttl_path),
-            "message": "Graph reset to DB-only. BACnet and orphans removed; Brick repopulated from database (TTL still has whatever sites/equipment/points exist in DB). To empty the model, delete all sites via CRUD first, then reset.",
+            "message": msg,
+            "cleanup": cleanup,
             **status["graph_serialization"],
         }
     return {
         "status": "error",
         "error": err,
+        "cleanup": cleanup,
         **status["graph_serialization"],
     }
 

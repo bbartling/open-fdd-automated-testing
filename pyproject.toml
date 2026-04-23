@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "openfdd-afdd-stack"
 # Stack UI/API release: bump together with frontend/package.json "version", frontend/package-lock.json (root), and PlatformSettings.app_version in openfdd_stack/platform/config.py
-version = "2.0.14"
+version = "2.0.15"
 description = "Open-FDD AFDD platform — Docker, FastAPI, BACnet scrapers, Grafana (uses open-fdd from PyPI)"
 readme = "README.md"
 license = { text = "MIT" }
@@ -61,7 +61,7 @@ openfdd_stack = ["platform/static/*"]
 [tool.black]
 line-length = 88
 target-version = ["py314"]
-extend-exclude = "openfdd_stack/platform/data_model_ttl\\.py|tools/graph_and_crud_test\\.py"
+extend-exclude = "openfdd_stack/platform/data_model_ttl\\.py"
 
 [tool.pytest.ini_options]
 testpaths = ["openfdd_stack/tests"]

@@ -7,8 +7,8 @@ and Docker container stats via Docker socket. Writes to host_metrics
 and container_metrics for Grafana dashboards.
 
 Usage:
-  python tools/run_host_stats.py
-  python tools/run_host_stats.py --loop
+  python -m openfdd_stack.platform.drivers.run_host_stats
+  python -m openfdd_stack.platform.drivers.run_host_stats --loop
 
 Config (env): OFDD_DB_DSN, OFDD_HOST_STATS_INTERVAL_SEC (default 60).
 """

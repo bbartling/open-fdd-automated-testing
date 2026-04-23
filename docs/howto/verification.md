@@ -101,7 +101,7 @@ You can confirm that the BACnet scraper, weather scraper, and FDD loop are runni
 - **Grafana:** Build a BACnet dashboard from the [Grafana SQL cookbook](grafana_cookbook) (Recipe 1), or run the same SQL in **Explore**.
 - **API:** `GET /points?site_id=<uuid>` and check which points have `bacnet_device_id` and `object_identifier`. Recent data appears in `timeseries_readings` (see Data flow check above).
 
-**Manual verification (BACnet scraping after graph_and_crud_test.py):**
+**Manual verification (BACnet scraping after site/model import):**
 
 1. **Grafana** — Open http://localhost:3000, go to **Explore**, choose the **openfdd_timescale** datasource, and run the BACnet scraper status or time series SQL from the [Grafana SQL cookbook](grafana_cookbook) (Recipe 1). Or build a full dashboard from the cookbook and confirm panels show recent data.
 2. **API** — List BACnet points (replace `SITE_ID` with your BensOffice site UUID from `curl -s http://localhost:8000/sites`):
@@ -123,7 +123,7 @@ You can confirm that the BACnet scraper, weather scraper, and FDD loop are runni
    ```
    If this returns rows with recent `ts`, the scraper is writing; any dashboard you build from the cookbook will show them.
 
-**Note:** `graph_and_crud_test.py` imports 2 BACnet points (SA-T, ZoneTemp) into **TestBenchSite** in step [4f1], so after the test TestBenchSite has points the scraper can poll. The test uses pre-tagged payloads (simulating the output of the **AI-assisted tagging** step). The full workflow with an LLM is: GET /data-model/export → tag with ChatGPT or another LLM (see [AI-assisted data modeling](../modeling/ai_assisted_tagging)) → PUT /data-model/import. The demo-import site created in [4g] is still deleted in [20c]; only TestBenchSite remains with BACnet points. Wait at least one scrape interval (see `OFDD_BACNET_SCRAPE_INTERVAL_MIN`, default 5 min) or restart the scraper, then check Grafana or the commands above.
+**Note:** After importing or discovering BACnet points, ensure at least one site has polling points with `bacnet_device_id` + `object_identifier`. The full workflow with an LLM is: GET /data-model/export → tag with ChatGPT or another LLM (see [AI-assisted data modeling](../modeling/ai_assisted_tagging)) → PUT /data-model/import. Wait at least one scrape interval (see `OFDD_BACNET_SCRAPE_INTERVAL_MIN`, default 5 min) or restart the scraper, then check Grafana or the commands above.
 
 **Weather (Open-Meteo):**
 

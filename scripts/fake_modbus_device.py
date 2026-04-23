@@ -1,25 +1,11 @@
 #!/usr/bin/env python3
 """
-Fake Modbus TCP device for Open-FDD bench testing.
+Fake Modbus TCP energy meter for Open-FDD bench/lab testing.
 
-Purpose
--------
-Provide a small but realistic HVAC + power-meter style Modbus device that can be
-used with the Open-FDD stack's Modbus TCP feature work.
+Standard-library only. Supports Modbus function codes 3 and 4.
 
-Design goals
-------------
-- standard-library only (no pymodbus dependency required)
-- supports function codes 3 and 4 (holding/input register reads)
-- serves realistic HVAC-ish and utility-ish signals
-- values drift over time so repeated scrapes look alive
-- exposes a stable register map suitable for Open-FDD point modeling/import
-
-Example
--------
-  python scripts/fake_modbus_device.py --host 127.0.0.1 --port 1502 --unit-id 1
-
-Then point Open-FDD Modbus config at host=127.0.0.1, port=1502, unit_id=1.
+Run:
+  python scripts/fake_modbus_device.py --host 0.0.0.0 --port 1502 --unit-id 1
 """
 
 from __future__ import annotations
@@ -27,7 +13,6 @@ from __future__ import annotations
 import argparse
 import math
 import signal
-import socket
 import socketserver
 import struct
 import threading
@@ -38,14 +23,6 @@ from typing import Callable
 
 def _u16(v: int) -> int:
     return int(v) & 0xFFFF
-
-
-def _i16_words(v: int) -> list[int]:
-    return [_u16(v)]
-
-
-def _u16_words(v: int) -> list[int]:
-    return [_u16(v)]
 
 
 def _u32_words(v: int) -> list[int]:
@@ -72,12 +49,12 @@ class RegisterDef:
     decode: str
     count: int
 
-    def words(self, t: float) -> list[int]:
-        return self.words_fn(self.value_fn(t))
+    def words(self, elapsed_seconds: float) -> list[int]:
+        return self.words_fn(self.value_fn(elapsed_seconds))
 
 
-class FakeBenchProfile:
-    """Small pretend building profile with dynamic HVAC and energy signals."""
+class FakeEnergyMeterProfile:
+    """Dynamic, realistic 3-phase electrical meter behavior."""
 
     def __init__(self) -> None:
         self.start = time.time()
@@ -90,172 +67,88 @@ class FakeBenchProfile:
         return list(self._defs)
 
     def _elapsed(self) -> float:
-        return time.time() - self.start
+        return max(0.0, time.time() - self.start)
 
     def _build_defs(self) -> list[RegisterDef]:
         return [
-            RegisterDef(0, "holding", _f32_words, self.outside_air_temp_f, "Outside Air Temp", "degF", "Outside_Air_Temperature_Sensor", "outside_air_temperature_sensor", "Outdoor air temperature", "float32", 2),
-            RegisterDef(2, "holding", _f32_words, self.return_air_temp_f, "Return Air Temp", "degF", "Return_Air_Temperature_Sensor", "return_air_temperature_sensor", "Return air temperature", "float32", 2),
-            RegisterDef(4, "holding", _f32_words, self.mixed_air_temp_f, "Mixed Air Temp", "degF", "Mixed_Air_Temperature_Sensor", "mixed_air_temperature_sensor", "Mixed air temperature", "float32", 2),
-            RegisterDef(6, "holding", _f32_words, self.supply_air_temp_f, "Supply Air Temp", "degF", "Supply_Air_Temperature_Sensor", "supply_air_temperature_sensor", "Supply air temperature", "float32", 2),
-            RegisterDef(8, "holding", _f32_words, self.zone_air_temp_f, "Zone Air Temp", "degF", "Zone_Air_Temperature_Sensor", "zone_air_temperature_sensor", "Representative zone temperature", "float32", 2),
-            RegisterDef(10, "holding", _f32_words, self.supply_fan_status, "Supply Fan Status", "bool-ish", "Fan_Status", "supply_fan_status", "0.0=off, 1.0=on", "float32", 2),
-            RegisterDef(12, "holding", _f32_words, self.supply_fan_speed_pct, "Supply Fan Speed", "%", "Speed_Sensor", "supply_fan_speed_pct", "Supply fan speed percent", "float32", 2),
-            RegisterDef(14, "holding", _f32_words, self.cooling_valve_pct, "Cooling Valve Cmd", "%", "Valve_Command", "cooling_valve_cmd_pct", "Cooling valve command percent", "float32", 2),
-            RegisterDef(16, "holding", _f32_words, self.heating_valve_pct, "Heating Valve Cmd", "%", "Valve_Command", "heating_valve_cmd_pct", "Heating valve command percent", "float32", 2),
-            RegisterDef(18, "holding", _f32_words, self.discharge_static_inwg, "Discharge Static", "in.wg", "Pressure_Sensor", "discharge_static_pressure_sensor", "Discharge static pressure", "float32", 2),
-            RegisterDef(20, "holding", _f32_words, self.electrical_kw, "AHU Electric Power", "kW", "Power_Sensor", "ahu_power_kw", "AHU electrical demand", "float32", 2),
-            RegisterDef(22, "holding", _f32_words, self.electrical_kwh, "AHU Electric Energy", "kWh", "Energy_Sensor", "ahu_energy_kwh", "Accumulated AHU energy", "float32", 2),
-            RegisterDef(24, "holding", _f32_words, self.energy_cost_usd, "Energy Cost", "USD", "Cost_Sensor", "energy_cost_usd", "Accumulated energy cost", "float32", 2),
-            RegisterDef(26, "holding", _f32_words, self.real_power_factor, "Power Factor", "ratio", "Power_Factor_Sensor", "power_factor", "Real power factor", "float32", 2),
-            RegisterDef(28, "holding", _f32_words, self.line_voltage_v, "Line Voltage", "V", "Voltage_Sensor", "line_voltage_v", "Line voltage", "float32", 2),
-            RegisterDef(30, "holding", _f32_words, self.line_current_a, "Line Current", "A", "Current_Sensor", "line_current_a", "Line current", "float32", 2),
-            RegisterDef(32, "holding", _u32_words, self.runtime_seconds, "Supply Fan Runtime", "s", "Runtime_Sensor", "supply_fan_runtime_seconds", "Accumulated fan runtime", "uint32", 2),
-            RegisterDef(34, "holding", _i16_words, self.alarm_code, "Alarm Code", "code", "Alarm_State", "alarm_code", "0 normal; 2 low SAT; 5 high OAT economizer stress", "int16", 1),
-            RegisterDef(100, "input", _f32_words, self.schedule_enable, "Occupied Schedule", "bool-ish", "Schedule_Status", "occupied_schedule", "1.0 occupied weekdays 8-17, else 0.0", "float32", 2),
-            RegisterDef(102, "input", _f32_words, self.outside_air_damper_pct, "OA Damper Cmd", "%", "Damper_Command", "outside_air_damper_cmd_pct", "Outside air damper command percent", "float32", 2),
-            RegisterDef(104, "input", _f32_words, self.return_fan_speed_pct, "Return Fan Speed", "%", "Speed_Sensor", "return_fan_speed_pct", "Return fan speed percent", "float32", 2),
-            RegisterDef(106, "input", _f32_words, self.rate_usd_per_kwh, "Energy Rate", "USD/kWh", "Price_Sensor", "energy_rate_usd_per_kwh", "Blended electric rate", "float32", 2),
+            RegisterDef(0, "holding", _f32_words, self.voltage_ll_v, "Voltage L-L", "V", "Voltage_Sensor", "line_voltage_v", "3-phase line-line voltage", "float32", 2),
+            RegisterDef(2, "holding", _f32_words, self.current_a, "Current", "A", "Current_Sensor", "line_current_a", "3-phase current", "float32", 2),
+            RegisterDef(4, "holding", _f32_words, self.real_power_kw, "Real Power", "kW", "Power_Sensor", "meter_power_kw", "Instantaneous real power", "float32", 2),
+            RegisterDef(6, "holding", _f32_words, self.reactive_power_kvar, "Reactive Power", "kVAR", "Reactive_Power_Sensor", "meter_reactive_power_kvar", "Instantaneous reactive power", "float32", 2),
+            RegisterDef(8, "holding", _f32_words, self.apparent_power_kva, "Apparent Power", "kVA", "Apparent_Power_Sensor", "meter_apparent_power_kva", "Instantaneous apparent power", "float32", 2),
+            RegisterDef(10, "holding", _f32_words, self.power_factor, "Power Factor", "ratio", "Power_Factor_Sensor", "power_factor", "True power factor", "float32", 2),
+            RegisterDef(12, "holding", _f32_words, self.frequency_hz, "Frequency", "Hz", "Frequency_Sensor", "line_frequency_hz", "System line frequency", "float32", 2),
+            RegisterDef(14, "holding", _f32_words, self.energy_import_kwh, "Energy Import", "kWh", "Energy_Sensor", "meter_energy_import_kwh", "Accumulated imported energy", "float32", 2),
+            RegisterDef(16, "holding", _f32_words, self.energy_export_kwh, "Energy Export", "kWh", "Energy_Sensor", "meter_energy_export_kwh", "Accumulated exported energy", "float32", 2),
+            RegisterDef(18, "holding", _f32_words, self.demand_kw_15m, "Demand 15m", "kW", "Demand_Sensor", "meter_demand_kw_15m", "Rolling 15-minute demand estimate", "float32", 2),
+            RegisterDef(20, "holding", _u32_words, self.runtime_seconds, "Meter Runtime", "s", "Runtime_Sensor", "meter_runtime_seconds", "Runtime since process start", "uint32", 2),
+            RegisterDef(100, "input", _f32_words, self.price_usd_per_kwh, "Tariff", "USD/kWh", "Price_Sensor", "energy_rate_usd_per_kwh", "Time-of-use tariff", "float32", 2),
+            RegisterDef(102, "input", _f32_words, self.energy_cost_usd, "Energy Cost", "USD", "Cost_Sensor", "energy_cost_usd", "Imported energy cost estimate", "float32", 2),
         ]
 
-    # --- behavior model ---
-    def _day_fraction(self, t: float) -> float:
-        return (t / 240.0) % 1.0
+    # ---- signal model ----
+    def _base_load_kw(self, t: float) -> float:
+        daily = 8.0 + 4.0 * math.sin((2.0 * math.pi * t) / 300.0)
+        pulse = 2.2 if int(t) % 97 < 8 else 0.0
+        jitter = 0.6 * math.sin((2.0 * math.pi * t) / 23.0)
+        return max(1.2, daily + pulse + jitter)
 
-    def _weekday_index(self, t: float) -> int:
-        return int((t / 240.0) // 1) % 7
+    def voltage_ll_v(self, t: float) -> float:
+        return round(480.0 + 3.5 * math.sin((2.0 * math.pi * t) / 41.0), 2)
 
-    def _hour_of_day(self, t: float) -> float:
-        return (self._day_fraction(t) * 24.0)
+    def power_factor(self, t: float) -> float:
+        return round(0.95 - 0.03 * abs(math.sin((2.0 * math.pi * t) / 120.0)), 3)
 
-    def _occupied(self, t: float) -> bool:
-        day = self._weekday_index(t)
-        hour = self._hour_of_day(t)
-        return day in [0, 1, 2, 3, 4] and 8.0 <= hour < 17.0
+    def frequency_hz(self, t: float) -> float:
+        return round(60.0 + 0.03 * math.sin((2.0 * math.pi * t) / 51.0), 3)
 
-    def _weather_band(self, t: float) -> bool:
-        oat = self.outside_air_temp_f(t)
-        return 32.0 <= oat <= 85.0
+    def real_power_kw(self, t: float) -> float:
+        return round(self._base_load_kw(t), 3)
 
-    def outside_air_temp_f(self, t: float) -> float:
-        base = 58.0 + 24.0 * math.sin((2.0 * math.pi * t) / 240.0)
-        noise = 1.2 * math.sin((2.0 * math.pi * t) / 27.0)
-        return round(base + noise, 2)
+    def apparent_power_kva(self, t: float) -> float:
+        pf = max(0.5, self.power_factor(t))
+        return round(self.real_power_kw(t) / pf, 3)
 
-    def return_air_temp_f(self, t: float) -> float:
-        return round(73.5 + 1.8 * math.sin((2.0 * math.pi * t) / 90.0), 2)
+    def reactive_power_kvar(self, t: float) -> float:
+        kva = self.apparent_power_kva(t)
+        kw = self.real_power_kw(t)
+        kvar_sq = max(0.0, kva * kva - kw * kw)
+        return round(math.sqrt(kvar_sq), 3)
 
-    def mixed_air_temp_f(self, t: float) -> float:
-        oat = self.outside_air_temp_f(t)
-        rat = self.return_air_temp_f(t)
-        oa_frac = self.outside_air_damper_pct(t) / 100.0
-        return round((oa_frac * oat) + ((1.0 - oa_frac) * rat), 2)
+    def current_a(self, t: float) -> float:
+        denom = max(1.0, self.voltage_ll_v(t) * 1.732 * self.power_factor(t))
+        amps = (self.real_power_kw(t) * 1000.0) / denom
+        return round(amps, 3)
 
-    def supply_air_temp_f(self, t: float) -> float:
-        occupied = self._occupied(t)
-        oat = self.outside_air_temp_f(t)
-        sat = 55.0 if occupied else 62.0
-        if oat > 85.0 and occupied:
-            sat += 1.4
-        if 32.0 > oat and occupied:
-            sat -= 1.1
-        sat += 0.5 * math.sin((2.0 * math.pi * t) / 41.0)
-        return round(sat, 2)
+    def energy_import_kwh(self, t: float) -> float:
+        # Approximate integrated energy from average demand profile.
+        hours = t / 3600.0
+        avg_kw = 7.8 + 1.1 * math.sin((2.0 * math.pi * t) / 900.0)
+        return round(max(0.0, hours * avg_kw), 4)
 
-    def zone_air_temp_f(self, t: float) -> float:
-        occupied = self._occupied(t)
-        target = 72.0 if occupied else 76.0
-        drift = 1.4 * math.sin((2.0 * math.pi * t) / 75.0)
-        return round(target + drift, 2)
+    def energy_export_kwh(self, t: float) -> float:
+        # Small occasional export for DER backfeed simulation.
+        hours = t / 3600.0
+        export_kw = 0.25 + 0.2 * max(0.0, math.sin((2.0 * math.pi * t) / 500.0))
+        return round(hours * export_kw, 4)
 
-    def schedule_enable(self, t: float) -> float:
-        return 1.0 if self._occupied(t) else 0.0
+    def demand_kw_15m(self, t: float) -> float:
+        # Demand tracks power with mild smoothing offset.
+        return round(max(0.0, self.real_power_kw(t) * 0.92 + 0.4), 3)
 
-    def supply_fan_status(self, t: float) -> float:
-        return 1.0 if self._occupied(t) else 0.0
+    def runtime_seconds(self, t: float) -> int:
+        return int(max(0.0, t))
 
-    def supply_fan_speed_pct(self, t: float) -> float:
-        if not self._occupied(t):
-            return 0.0
-        spd = 62.0 + 9.0 * math.sin((2.0 * math.pi * t) / 53.0)
-        return round(max(35.0, min(95.0, spd)), 2)
-
-    def return_fan_speed_pct(self, t: float) -> float:
-        if not self._occupied(t):
-            return 0.0
-        return round(max(30.0, self.supply_fan_speed_pct(t) - 7.0), 2)
-
-    def cooling_valve_pct(self, t: float) -> float:
-        if not self._occupied(t):
-            return 0.0
-        oat = self.outside_air_temp_f(t)
-        val = max(0.0, min(100.0, (oat - 55.0) * 2.6))
-        return round(val, 2)
-
-    def heating_valve_pct(self, t: float) -> float:
-        if not self._occupied(t):
-            return 0.0
-        oat = self.outside_air_temp_f(t)
-        val = max(0.0, min(100.0, (50.0 - oat) * 2.7))
-        return round(val, 2)
-
-    def outside_air_damper_pct(self, t: float) -> float:
-        occupied = self._occupied(t)
-        if not occupied:
-            return 10.0
-        if self._weather_band(t):
-            return round(35.0 + 20.0 * math.sin((2.0 * math.pi * t) / 67.0), 2)
-        return 15.0
-
-    def discharge_static_inwg(self, t: float) -> float:
-        if not self._occupied(t):
-            return 0.08
-        return round(1.72 + 0.12 * math.sin((2.0 * math.pi * t) / 48.0), 3)
-
-    def electrical_kw(self, t: float) -> float:
-        fan = self.supply_fan_speed_pct(t) / 100.0
-        cool = self.cooling_valve_pct(t) / 100.0
-        heat = self.heating_valve_pct(t) / 100.0
-        kw = (2.2 + 9.5 * fan**2.4 + 2.8 * cool + 1.6 * heat) if self._occupied(t) else 0.35
-        return round(kw, 3)
-
-    def electrical_kwh(self, t: float) -> float:
-        elapsed_h = max(0.0, t / 3600.0)
-        avg_kw = 4.8 if self._occupied(t) else 1.4
-        return round(elapsed_h * avg_kw, 3)
-
-    def rate_usd_per_kwh(self, t: float) -> float:
-        hr = self._hour_of_day(t)
-        if 13.0 <= hr < 18.0:
-            return 0.18
-        if 8.0 <= hr < 13.0:
-            return 0.14
+    def price_usd_per_kwh(self, t: float) -> float:
+        hour = ((t / 300.0) % 1.0) * 24.0
+        if 13.0 <= hour < 19.0:
+            return 0.19
+        if 7.0 <= hour < 13.0:
+            return 0.13
         return 0.09
 
     def energy_cost_usd(self, t: float) -> float:
-        return round(self.electrical_kwh(t) * self.rate_usd_per_kwh(t), 3)
-
-    def real_power_factor(self, t: float) -> float:
-        return round(0.94 - 0.03 * abs(math.sin((2.0 * math.pi * t) / 120.0)), 3)
-
-    def line_voltage_v(self, t: float) -> float:
-        return round(480.0 + 4.5 * math.sin((2.0 * math.pi * t) / 38.0), 2)
-
-    def line_current_a(self, t: float) -> float:
-        kw = self.electrical_kw(t)
-        return round((kw * 1000.0) / max(1.0, self.line_voltage_v(t) * 1.732 * self.real_power_factor(t)), 2)
-
-    def runtime_seconds(self, t: float) -> int:
-        return max(0, int(t * 0.72 if self._occupied(t) else t * 0.18))
-
-    def alarm_code(self, t: float) -> int:
-        oat = self.outside_air_temp_f(t)
-        sat = self.supply_air_temp_f(t)
-        if self._occupied(t) and sat < 53.5:
-            return 2
-        if self._occupied(t) and oat > 88.0:
-            return 5
-        return 0
+        return round(self.energy_import_kwh(t) * self.price_usd_per_kwh(t), 4)
 
     def read_words(self, function_code: int, address: int, count: int) -> list[int] | None:
         bank = self._holding if function_code == 3 else self._input if function_code == 4 else None
@@ -290,7 +183,7 @@ class FakeBenchProfile:
 
 
 class ModbusTCPHandler(socketserver.BaseRequestHandler):
-    profile: FakeBenchProfile
+    profile: FakeEnergyMeterProfile
     unit_id: int
 
     def handle(self) -> None:
@@ -299,32 +192,34 @@ class ModbusTCPHandler(socketserver.BaseRequestHandler):
             if not header:
                 return
             tx_id, proto_id, length, unit_id = struct.unpack(">HHHB", header)
-            # MBAP length = unit id (1) + PDU; Modbus TCP PDU is capped (reject fuzzed huge reads).
             if proto_id != 0 or length < 2 or length > 254:
                 return
             pdu = self._recv_exact(length - 1)
             if not pdu:
                 return
-            if unit_id != self.unit_id:
-                self._send_exception(tx_id, unit_id, pdu[0], 11)
-                continue
+
             func = pdu[0]
+            if unit_id != self.unit_id:
+                self._send_exception(tx_id, unit_id, func, 11)
+                continue
             if func not in (3, 4):
                 self._send_exception(tx_id, unit_id, func, 1)
                 continue
             if len(pdu) != 5:
                 self._send_exception(tx_id, unit_id, func, 3)
                 continue
+
             address, count = struct.unpack(">HH", pdu[1:5])
             if count < 1 or count > 125:
                 self._send_exception(tx_id, unit_id, func, 3)
                 continue
+
             words = self.profile.read_words(func, address, count)
             if words is None or len(words) != count:
                 self._send_exception(tx_id, unit_id, func, 2)
                 continue
-            byte_count = count * 2
-            resp_pdu = bytes([func, byte_count]) + b"".join(struct.pack(">H", w) for w in words)
+
+            resp_pdu = bytes([func, count * 2]) + b"".join(struct.pack(">H", w) for w in words)
             self._send_mbap(tx_id, unit_id, resp_pdu)
 
     def _recv_exact(self, n: int) -> bytes | None:
@@ -349,7 +244,7 @@ class ThreadedModbusTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServe
     daemon_threads = True
 
 
-def _make_handler(profile: FakeBenchProfile, unit_id: int):
+def _make_handler(profile: FakeEnergyMeterProfile, unit_id: int):
     class _Handler(ModbusTCPHandler):
         pass
 
@@ -358,9 +253,9 @@ def _make_handler(profile: FakeBenchProfile, unit_id: int):
     return _Handler
 
 
-def _print_examples(profile: FakeBenchProfile, host: str, port: int, unit_id: int) -> None:
-    print("\nOpen-FDD sample Modbus point rows (for data-model import or manual point creation):\n")
-    for d in profile.defs[:8]:
+def _print_sample_points(profile: FakeEnergyMeterProfile, host: str, port: int, unit_id: int) -> None:
+    print("\nOpen-FDD sample point payloads (first 10):\n")
+    for d in profile.defs[:10]:
         print(
             {
                 "external_id": d.fdd_input,
@@ -384,20 +279,20 @@ def _print_examples(profile: FakeBenchProfile, host: str, port: int, unit_id: in
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Fake Modbus TCP HVAC/power-meter device")
-    parser.add_argument("--host", default="127.0.0.1")
+    parser = argparse.ArgumentParser(description="Fake Modbus TCP energy meter")
+    parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=1502)
     parser.add_argument("--unit-id", type=int, default=1)
-    parser.add_argument("--print-map", action="store_true", help="Print markdown register table and exit")
+    parser.add_argument("--print-map", action="store_true", help="Print markdown register map and exit")
     parser.add_argument("--print-sample-points", action="store_true", help="Print sample Open-FDD point payloads and exit")
     args = parser.parse_args()
 
-    profile = FakeBenchProfile()
+    profile = FakeEnergyMeterProfile()
     if args.print_map:
         print(profile.register_table_markdown())
         return 0
     if args.print_sample_points:
-        _print_examples(profile, args.host, args.port, args.unit_id)
+        _print_sample_points(profile, args.host, args.port, args.unit_id)
         return 0
 
     handler = _make_handler(profile, args.unit_id)
@@ -412,7 +307,7 @@ def main() -> int:
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, _shutdown)
 
-    print(f"Fake Modbus device listening on {args.host}:{args.port} unit_id={args.unit_id}")
+    print(f"Fake Modbus energy meter listening on {args.host}:{args.port} unit_id={args.unit_id}")
     print("Supports function codes 3 (holding) and 4 (input). Ctrl+C to stop.")
     print(profile.register_table_markdown())
     with server:

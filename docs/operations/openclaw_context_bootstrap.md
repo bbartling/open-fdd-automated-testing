@@ -32,17 +32,18 @@ Same tools, any building: repo stores reusable process, while site-specific trut
 
 1. `openclaw/HANDOFF_PROTOCOL.md` — mailbox handoff with `issues_log.md` and log files.
 2. `openclaw/SKILL.md` — agent behavior, bootstrap modes, MCP, security scope.
-3. `openclaw/references/testing_layers.md` — where pytest vs bench vs `bootstrap.sh` live.
-4. `openclaw/references/legacy_automated_testing.md` — redirect from deprecated **open-fdd-automated-testing** if anything still points there.
-5. `openclaw/references/session_status_summary.md` — **5-bullet** lab snapshot format when agents must not dump logs into provider chat.
+3. `openclaw/references/testing-layers.md` — where pytest vs bench vs `bootstrap.sh` live.
+4. `openclaw/references/first-session-checklist.md` — first-session quick triage checklist.
+5. `openclaw/references/session-status-summary.md` — **5-bullet** lab snapshot format when agents must not dump logs into provider chat.
+6. `openclaw/references/live-hvac-guardrails.md` — safety-first defaults for live building work.
 
 **Product and operations (published docs paths):**
 
-6. [OpenClaw integration](../openclaw_integration)
-6b. [OpenClaw, Docker BACnet, and human data modeling](../howto/openclaw_bacnet_docker_and_human_modeling) — host-mode BACnet, `openfdd_api:8000` /bacnet proxy, UI export/import for tagging
-7. [Open-FDD integrity sweep](openfdd_integrity_sweep)
-8. [Operator framework](operator_framework)
-9. [AI PR review playbook](../appendix/ai_pr_review_playbook)
+7. [OpenClaw integration](../openclaw_integration)
+7b. [OpenClaw, Docker BACnet, and human data modeling](../howto/openclaw_bacnet_docker_and_human_modeling) — host-mode BACnet, `openfdd_api:8000` /bacnet proxy, UI export/import for tagging
+8. [Open-FDD integrity sweep](openfdd_integrity_sweep)
+9. [Operator framework](operator_framework)
+10. [AI PR review playbook](../appendix/ai_pr_review_playbook)
 
 **AI data modeling (when the stack includes model/API):** [LLM workflow](../modeling/llm_workflow), [AI-assisted tagging](../modeling/ai_assisted_tagging), plus `GET /data-model/export` and `PUT /data-model/import` as in OpenClaw integration.
 

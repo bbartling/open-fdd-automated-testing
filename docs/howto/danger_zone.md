@@ -31,7 +31,7 @@ When you delete via the API (Swagger, CRUD UI, or scripts):
 
 So deleting a site removes all its points and **all their timeseries data from the database**. The DB uses `ON DELETE CASCADE`: site → equipment & points → timeseries_readings. So when the data model reference is removed (site/equipment/point), the corresponding timeseries rows are **physically deleted**—no SQL or container access needed. There are no orphan rows left that a user could not see or clean up via the CRUD (or a future React UI). `DELETE /sites/{id}`, `DELETE /equipment/{id}`, and `DELETE /points/{id}` are **permanent**. A future front end can add confirmation prompts (e.g. “This will permanently delete all timeseries for this site. Continue?”) before calling these endpoints. After each delete, the **Brick TTL** (`config/data_model.ttl`) is regenerated and written to disk. See [Data modeling](../modeling/overview).
 
-**Full reset script:** `python tools/delete_all_sites_and_reset.py` uses only the API (GET /sites, DELETE /sites/{id} for each, then POST /data-model/reset). It does not run SQL inside containers—the same flow a future UI would use.
+**Full reset flow:** `./scripts/bootstrap.sh --reset-data` uses only the API (GET /sites, DELETE /sites/{id} for each, then `POST /data-model/reset?clear_fault_history=true`). It does not run SQL inside containers—the same flow a future UI would use.
 
 ---
 
@@ -52,7 +52,7 @@ To set retention: run bootstrap with `--retention-days N` or set `OFDD_RETENTION
 To blast away the project and start over with a clean DB and Grafana:
 
 ```bash
-cd open-fdd/platform
+cd open-fdd-afdd-stack/stack
 docker compose down -v
 cd ..
 ./scripts/bootstrap.sh
@@ -68,7 +68,7 @@ cd ..
 **DANGER: All DB data is lost.** Grafana volume is unchanged.
 
 ```bash
-cd platform
+cd stack
 docker compose exec db psql -U postgres -c "DROP DATABASE openfdd;"
 docker compose exec db psql -U postgres -c "CREATE DATABASE openfdd;"
 # From repo root, re-run bootstrap to apply migrations:
@@ -82,7 +82,7 @@ docker compose exec db psql -U postgres -c "CREATE DATABASE openfdd;"
 Same effect as “Start completely from scratch” but without calling bootstrap:
 
 ```bash
-cd platform
+cd stack
 docker compose down -v
 docker compose up -d --build
 # Then from repo root: ./scripts/bootstrap.sh (waits for Postgres, applies migrations)
@@ -90,11 +90,11 @@ docker compose up -d --build
 
 ### Reset everything for testing
 
-To get a clean slate and run tests (e.g. `graph_and_crud_test.py`) or re-import BACnet:
+To get a clean slate and run tests or re-import BACnet:
 
 1. **Wipe sites and data model** (choose one):
-   - **Bootstrap:** `./scripts/bootstrap.sh --reset-data` — Brings up the stack (if needed), runs migrations, then deletes all sites via the API and calls POST /data-model/reset. Use `OFDD_API_URL=http://192.168.204.16:8000` if the API is on another host.
-   - **Standalone:** `python tools/delete_all_sites_and_reset.py` — Same effect (GET /sites, DELETE each, POST /data-model/reset). Use `BASE_URL=http://192.168.204.16:8000` if your API is on another host.  
+   - **Bootstrap:** `./scripts/bootstrap.sh --reset-data` — Brings up the stack (if needed), runs migrations, then deletes all sites via the API and calls `POST /data-model/reset?clear_fault_history=true`. Use `OFDD_API_URL=http://192.168.204.16:8000` if the API is on another host.
+   - **API-only equivalent:** call `GET /sites`, `DELETE /sites/{id}` for each site, then `POST /data-model/reset?clear_fault_history=true`.
    Both use only the API (no SQL or Docker exec). The TTL and graph end up empty.
 
 2. **Faster FDD/scrapers for testing (optional):**  
@@ -110,9 +110,8 @@ To get a clean slate, create test data (BensOffice + BACnet points), then confir
 1. **Reset:** `./scripts/bootstrap.sh --reset-data`  
    Brings up the stack, runs migrations, then wipes all sites and resets the data model. You do **not** need to run `delete_all_sites_and_reset.py` after this — it does the same thing.
 
-2. **Create test data:** `python tools/graph_and_crud_test.py`  
-   Creates the BensOffice site, equipment (BensFakeAhu, BensFakeVavBox), discovers BACnet points, and imports them. Leaves BensOffice in place so scrapers have points to scrape.  
-   **Wait for scrapes before exit:** `python tools/graph_and_crud_test.py --wait-scrapes 2 --scrape-interval-min 1` (use `--scrape-interval-min` to match your scraper; Docker default is 5 unless you set `OFDD_BACNET_SCRAPE_INTERVAL_MIN` in stack/.env).
+2. **Create test data:** use the BACnet tools/Data model workflow (site, equipment, point discovery/import) or your site import JSON.
+   Leave at least one site with polling BACnet points so scrapers have rows to process.
 
 3. **Check Grafana:**  
    Wait for the next scraper runs (or use fast intervals as above). Then open:
@@ -128,8 +127,9 @@ See [Verification & Data Flow](verification) for API checks and scraper validati
 
 To clear the **data model** (Brick TTL and in-memory graph) but keep the stack and DB schema:
 
-1. **Delete every site** via the API (e.g. `python tools/delete_all_sites_and_reset.py`, or `GET /sites` then `DELETE /sites/{id}` for each). Cascade removes equipment, points, and timeseries.
+1. **Delete every site** via the API (`GET /sites` then `DELETE /sites/{id}` for each), or run `./scripts/bootstrap.sh --reset-data`. Cascade removes equipment, points, and timeseries.
 2. **POST /data-model/reset** — Clears the in-memory graph and repopulates from the DB only (Brick). BACnet triples and orphans are removed; the graph now has only what’s in the DB. Since the DB has no sites, the TTL is effectively empty and is written to `config/data_model.ttl`.
+3. **Reset fault history (optional but recommended for test bench clean slate):** `POST /data-model/reset?clear_fault_history=true` clears `fault_state`, `fault_results`, and `fault_events`.
 
 **Important:** `GET /data-model/ttl` (and `?save=true`) always reflects the **current DB**: it syncs Brick from the DB, then serializes the graph. So if you still see sites/points in the TTL after “delete all sites + reset”, you are either (1) calling a **different** API host (e.g. script used `localhost:8000` but you curl `192.168.204.16:8000`), or (2) another process (e.g. weather scraper) re-created a site/points before you fetched the TTL. Use the same `BASE_URL` for the script and for curl, and run `GET /sites` after the script to confirm the list is empty.
 
@@ -141,6 +141,4 @@ Use CRUD deletes to remove specific sites, equipment, or points. Data cascades a
 
 ## Unit tests
 
-- **`tools/bacnet_crud_smoke_test.py`** — Simple BACnet + CRUD: whois range, point discovery, create site/equipment/points from discovered devices. Pass `--start-instance` / `--end-instance` (e.g. 1–3456999). Run against live API.
-- **`tools/graph_and_crud_test.py`** — Full e2e: CRUD, SPARQL, data model, import, download; creates then deletes sites; only TestBenchSite remains at end.
 - **`open_fdd/tests/platform/test_crud_api.py`** — Unit tests with mocked DB; verify API contract and status codes.

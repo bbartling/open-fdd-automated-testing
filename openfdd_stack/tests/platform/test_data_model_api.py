@@ -843,3 +843,92 @@ def test_sparql_bacnet_device_and_object_names():
     ]
     assert "SA-T" in names
     assert "ZoneTemp" in names
+
+
+def test_data_model_reset_deactivates_stale_fault_state_by_default():
+    """POST /data-model/reset deactivates active rows whose site no longer exists."""
+    execute_calls: list[tuple[str, tuple | None]] = []
+    cursor = MagicMock()
+    cursor.rowcount = 2
+
+    def _capture_execute(sql, params=None):
+        execute_calls.append((sql, params))
+
+    cursor.execute = MagicMock(side_effect=_capture_execute)
+    conn = MagicMock()
+    conn.__enter__ = MagicMock(return_value=conn)
+    conn.__exit__ = MagicMock(return_value=None)
+    conn.cursor.return_value.__enter__ = MagicMock(return_value=cursor)
+    conn.cursor.return_value.__exit__ = MagicMock(return_value=None)
+    conn.commit = MagicMock()
+
+    with (
+        patch("openfdd_stack.platform.api.data_model.reset_graph_to_db_only"),
+        patch("openfdd_stack.platform.api.data_model.get_conn", return_value=conn),
+        patch(
+            "openfdd_stack.platform.api.data_model.write_ttl_to_file",
+            return_value=(True, None),
+        ),
+        patch(
+            "openfdd_stack.platform.api.data_model.get_serialization_status",
+            return_value={"graph_serialization": {"ok": True}},
+        ),
+    ):
+        r = client.post("/data-model/reset")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "ok"
+    assert body["cleanup"]["fault_state_deactivated"] == 2
+    assert "clear_fault_history=true" in body["message"]
+    sql_text = "\n".join(sql for sql, _ in execute_calls)
+    assert "UPDATE fault_state" in sql_text
+    assert "site_id NOT IN" in sql_text
+    conn.commit.assert_called_once()
+
+
+def test_data_model_reset_with_clear_fault_history_deletes_fault_tables():
+    """POST /data-model/reset?clear_fault_history=true clears fault_state/results/events."""
+    execute_calls: list[str] = []
+    rowcounts = iter([3, 4, 5])
+    cursor = MagicMock()
+
+    def _capture_execute(sql, params=None):
+        execute_calls.append(sql)
+        cursor.rowcount = next(rowcounts)
+
+    cursor.execute = MagicMock(side_effect=_capture_execute)
+    conn = MagicMock()
+    conn.__enter__ = MagicMock(return_value=conn)
+    conn.__exit__ = MagicMock(return_value=None)
+    conn.cursor.return_value.__enter__ = MagicMock(return_value=cursor)
+    conn.cursor.return_value.__exit__ = MagicMock(return_value=None)
+    conn.commit = MagicMock()
+
+    with (
+        patch("openfdd_stack.platform.api.data_model.reset_graph_to_db_only"),
+        patch("openfdd_stack.platform.api.data_model.get_conn", return_value=conn),
+        patch(
+            "openfdd_stack.platform.api.data_model.write_ttl_to_file",
+            return_value=(True, None),
+        ),
+        patch(
+            "openfdd_stack.platform.api.data_model.get_serialization_status",
+            return_value={"graph_serialization": {"ok": True}},
+        ),
+    ):
+        r = client.post("/data-model/reset?clear_fault_history=true")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "ok"
+    assert body["cleanup"] == {
+        "fault_events_deleted": 3,
+        "fault_results_deleted": 4,
+        "fault_state_deleted": 5,
+    }
+    assert "fault history cleared" in body["message"]
+    assert any("DELETE FROM fault_events" in sql for sql in execute_calls)
+    assert any("DELETE FROM fault_results" in sql for sql in execute_calls)
+    assert any("DELETE FROM fault_state" in sql for sql in execute_calls)
+    conn.commit.assert_called_once()

@@ -13,6 +13,22 @@ nav_exclude: true
 
 `./scripts/bootstrap.sh` does **not** wipe the database. It starts containers and runs migrations (idempotent). Only `--reset-grafana` wipes Grafana's volume. See [Danger zone](danger_zone) for when data is purged.
 
+`./scripts/bootstrap.sh --reset-data` is different: it performs an API-driven test-bench reset (delete all sites, then `POST /data-model/reset?clear_fault_history=true`).
+
+---
+
+## OpenClaw / API-only agent scope
+
+If an agent runs without host shell access (common for OpenClaw sibling-container setups), treat it as API-only:
+
+- It can validate and operate platform behavior via HTTP endpoints.
+- It cannot execute host commands like `./scripts/bootstrap.sh` directly.
+- For reset evidence in API-only mode, use:
+  - `POST /data-model/reset` (graph reset + stale active fault-state deactivation)
+  - `POST /data-model/reset?clear_fault_history=true` (full fault table cleanup)
+
+For host command proof, run bootstrap on the Docker host and capture stdout in that host session.
+
 ---
 
 ## Start / stop / restart
@@ -88,7 +104,7 @@ The fdd-loop container runs on a schedule (e.g. every 3 hours). While it’s sle
 ```bash
 touch config/.run_fdd_now
 # or
-python tools/trigger_fdd_run.py
+python -m openfdd_stack.platform.drivers.run_trigger_fdd
 ```
 
 **From Swagger:** `POST /run-fdd` (API touches the same file in its config volume.)
@@ -101,7 +117,7 @@ Run the rules once and exit. Use this when the loop isn’t running or you’re 
 
 **On host:**
 ```bash
-python tools/run_rule_loop.py
+python -m openfdd_stack.platform.drivers.run_rule_loop
 ```
 
 **Inside Docker** (one-shot, same code path as the long-running loop but no `--loop` scheduler):
@@ -109,7 +125,7 @@ python tools/run_rule_loop.py
 cd stack
 docker compose exec fdd-loop python -m openfdd_stack.platform.drivers.run_rule_loop
 ```
-(`fdd-loop` image defaults to `run_rule_loop --loop`; this overrides the command for a single run. From the repo you can also use `python tools/run_rule_loop.py` on the host with `OFDD_DB_DSN` set.)
+(`fdd-loop` image defaults to `run_rule_loop --loop`; this overrides the command for a single run. From the repo you can also use `python -m openfdd_stack.platform.drivers.run_rule_loop` on the host with `OFDD_DB_DSN` set.)
 
 **Summary:** For “update faults now” with the normal Docker loop, use **touch** (or the script or `POST /run-fdd`). For a single run without the loop, use the **Py script** (or the exec command above).
 

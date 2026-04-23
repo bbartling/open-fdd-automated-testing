@@ -8,8 +8,8 @@ After each 1h wait we validate by comparing the total distinct timestamps BEFORE
 and AFTER the wait to see exactly how many scrapes occurred in that specific window.
 
 Usage:
-  BASE_URL=http://192.168.204.16:8000 python tools/run_bacnet_scrape_interval_test.py
-  BASE_URL=http://192.168.204.16:8000 python tools/run_bacnet_scrape_interval_test.py --once
+  BASE_URL=http://192.168.204.16:8000 python -m openfdd_stack.platform.drivers.run_bacnet_scrape_interval_test
+  BASE_URL=http://192.168.204.16:8000 python -m openfdd_stack.platform.drivers.run_bacnet_scrape_interval_test --once
 """
 
 import csv

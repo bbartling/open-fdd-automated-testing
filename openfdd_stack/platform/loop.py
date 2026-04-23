@@ -405,6 +405,29 @@ def _sync_fault_definitions_from_rules(rules: list) -> None:
         pass  # do not fail FDD run if sync fails
 
 
+def _rule_allows_equipment_types(rule: dict, equipment_types: list[str]) -> bool:
+    """
+    Return True when a rule is applicable to the current deployment equipment types.
+
+    Supports both legacy `equipment_type` and canonical `equipment_types`.
+    If neither key is present, the rule is considered globally applicable.
+    """
+    raw = rule.get("equipment_types")
+    if raw is None:
+        raw = rule.get("equipment_type")
+    if raw is None:
+        return True
+    if isinstance(raw, str):
+        wanted = {raw}
+    elif isinstance(raw, list):
+        wanted = {str(v) for v in raw if str(v).strip()}
+    else:
+        wanted = {str(raw)}
+    if not wanted:
+        return True
+    return bool(set(equipment_types) & wanted)
+
+
 def sync_fault_definitions_from_rules_dir() -> None:
     """
     Load all rule YAML from configured rules_dir and sync fault_definitions (upsert + prune).
@@ -488,8 +511,7 @@ def run_fdd_loop(
     rules = [
         r
         for r in all_rules
-        if not r.get("equipment_type")
-        or any(et in equipment_types for et in r.get("equipment_type", []))
+        if isinstance(r, dict) and _rule_allows_equipment_types(r, equipment_types)
     ]
     runner = RuleRunner(rules=rules)
     strict = bool(getattr(settings, "fdd_strict_rules", False))
