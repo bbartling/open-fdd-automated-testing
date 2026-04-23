@@ -2153,16 +2153,7 @@ purge_timeseries_via_api() {
   local resp_file http_code resp
   resp_file="$(mktemp -t ofdd_purge_timeseries_XXXXXX)"
   http_code="$(curl -sS -o "$resp_file" -w "%{http_code}" -X POST "$API_BASE/timeseries/purge" -H "Content-Type: application/json" "${curl_auth[@]}" -d '{}' 2>/dev/null || echo "000")"
-  resp="$(python3 - "$resp_file" <<'PY'
-import pathlib
-import sys
-p = pathlib.Path(sys.argv[1])
-try:
-    print(p.read_text(encoding='utf-8', errors='replace'))
-except Exception:
-    print("")
-PY
-)"
+  resp="$(cat "$resp_file" 2>/dev/null || true)"
   rm -f "$resp_file" 2>/dev/null || true
   if [[ "$http_code" =~ ^2[0-9][0-9]$ ]]; then
     echo "  POST /timeseries/purge OK."
