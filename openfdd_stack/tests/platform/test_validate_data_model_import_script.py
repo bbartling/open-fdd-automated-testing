@@ -8,7 +8,12 @@ def _script_path() -> str:
     cur = Path(__file__).resolve()
     for parent in [cur, *cur.parents]:
         if (parent / "pyproject.toml").exists():
-            return str(parent / "scripts" / "validate_data_model_import.py")
+            candidate = parent / "scripts" / "validate_data_model_import.py"
+            if candidate.exists():
+                return str(candidate)
+            raise FileNotFoundError(
+                f"validate_data_model_import.py not found at expected path: {candidate}"
+            )
     raise RuntimeError("Could not locate repository root for validate_data_model_import.py")
 
 
@@ -40,6 +45,7 @@ def test_validate_data_model_import_script_reports_validation_path(tmp_path):
         "points": [
             {
                 "point_id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+                "brick_type": "Supply_Air_Temperature_Sensor",
                 "unknown_key": "x",
             }
         ]

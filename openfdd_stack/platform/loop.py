@@ -263,12 +263,7 @@ def _point_lookup_for_equipment(
                 (site_id, site_id, equipment_id),
             )
             rows = cur.fetchall()
-    inverse_column_map: dict[str, str] = {}
-    for k, v in (column_map or {}).items():
-        ks = str(k or "").strip()
-        vs = str(v or "").strip()
-        if ks and vs and vs not in inverse_column_map:
-            inverse_column_map[vs] = ks
+    inverse_column_map = _external_to_semantic_column_map(column_map)
 
     lookup: dict[str, dict[str, str]] = {}
     for r in rows:
@@ -307,12 +302,7 @@ def _point_lookup_for_site(
                 (site_id, site_id),
             )
             rows = cur.fetchall()
-    inverse_column_map: dict[str, str] = {}
-    for k, v in (column_map or {}).items():
-        ks = str(k or "").strip()
-        vs = str(v or "").strip()
-        if ks and vs and vs not in inverse_column_map:
-            inverse_column_map[vs] = ks
+    inverse_column_map = _external_to_semantic_column_map(column_map)
 
     lookup: dict[str, dict[str, str]] = {}
     for r in rows:

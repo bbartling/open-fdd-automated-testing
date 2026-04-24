@@ -312,6 +312,7 @@ if $RESET_DATA && $PURGE_TIMESERIES; then
 fi
 if $ENFORCE_NETWORK_DEFAULT && [[ "$MODE" == "collector" || "$MODE" == "engine" ]]; then
   echo "--enforce-network-default requested, but MODE=$MODE does not run API by default; enforcement will run only if API is reachable."
+  ENFORCE_NETWORK_DEFAULT=false
 fi
 
 # --update --test: defer pytest to after pull/rebuild (otherwise the early --test handler exits before --update runs).
@@ -2122,19 +2123,65 @@ enforce_network_default_config_via_api() {
   [[ -n "${OFDD_API_KEY:-}" ]] && curl_auth=(-H "Authorization: Bearer $OFDD_API_KEY")
   API_BASE="$(bootstrap_api_base_for_host_curl)"
 
+  # If we already have sites, point Open-Meteo at first site name (same behavior as seed path).
+  local open_meteo_site_id_override=""
+  local sites_json
+  sites_json="$(curl -sf -H "Accept: application/json" "${curl_auth[@]}" "$API_BASE/sites" 2>/dev/null)" || true
+  if [[ -n "$sites_json" ]]; then
+    open_meteo_site_id_override=$(echo "$sites_json" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    sites = d if isinstance(d, list) else []
+    if sites and sites[0].get('name'):
+        print(sites[0]['name'])
+except Exception:
+    pass
+" 2>/dev/null)
+  fi
+
   local body resp_file http_code resp
   # /config currently validates bacnet_gateways as optional string (JSON-encoded list), not array.
-  body='{"rule_interval_hours":3.0,"lookback_days":3,"rules_dir":"stack/rules","brick_ttl_dir":"config","bacnet_enabled":true,"bacnet_scrape_interval_min":5,"bacnet_server_url":"http://caddy:8081","bacnet_site_id":"default","bacnet_gateways":"","open_meteo_enabled":true,"open_meteo_interval_hours":24,"open_meteo_latitude":41.88,"open_meteo_longitude":-87.63,"open_meteo_timezone":"America/Chicago","open_meteo_days_back":3,"open_meteo_site_id":"default","graph_sync_interval_min":5}'
+  body="$(OPEN_METEO_SITE_ID_OVERRIDE="$open_meteo_site_id_override" python3 -c "
+import json, os
+om_site = os.environ.get('OPEN_METEO_SITE_ID_OVERRIDE') or 'default'
+print(json.dumps({
+  'rule_interval_hours': 3.0,
+  'lookback_days': 3,
+  'rules_dir': 'stack/rules',
+  'brick_ttl_dir': 'config',
+  'bacnet_enabled': True,
+  'bacnet_scrape_interval_min': 5,
+  'bacnet_server_url': 'http://caddy:8081',
+  'bacnet_site_id': 'default',
+  'bacnet_gateways': '',
+  'open_meteo_enabled': True,
+  'open_meteo_interval_hours': 24,
+  'open_meteo_latitude': 41.88,
+  'open_meteo_longitude': -87.63,
+  'open_meteo_timezone': 'America/Chicago',
+  'open_meteo_days_back': 3,
+  'open_meteo_site_id': om_site,
+  'graph_sync_interval_min': 5,
+}))
+" 2>/dev/null)" || body='{"rule_interval_hours":3.0,"lookback_days":3,"rules_dir":"stack/rules","brick_ttl_dir":"config","bacnet_enabled":true,"bacnet_scrape_interval_min":5,"bacnet_server_url":"http://caddy:8081","bacnet_site_id":"default","bacnet_gateways":"","open_meteo_enabled":true,"open_meteo_interval_hours":24,"open_meteo_latitude":41.88,"open_meteo_longitude":-87.63,"open_meteo_timezone":"America/Chicago","open_meteo_days_back":3,"open_meteo_site_id":"default","graph_sync_interval_min":5}'
   resp_file="$(mktemp -t ofdd_enforce_network_default_XXXXXX)"
   http_code="$(curl -sS -o "$resp_file" -w "%{http_code}" -X PUT "$API_BASE/config" -H "Content-Type: application/json" "${curl_auth[@]}" -d "$body" 2>/dev/null || echo "000")"
   resp="$(cat "$resp_file" 2>/dev/null || true)"
   rm -f "$resp_file" 2>/dev/null || true
   if [[ "$http_code" =~ ^2[0-9][0-9]$ ]]; then
     echo "  PUT /config OK (graph config reset to canonical defaults)."
+    [[ -n "$open_meteo_site_id_override" ]] && echo "  open_meteo_site_id set to first site: $open_meteo_site_id_override"
   else
     echo "  PUT /config failed while enforcing defaults (HTTP ${http_code})."
     [[ -n "$resp" ]] && echo "  Response: $resp"
     return 1
+  fi
+  # Trigger one FDD run so weather is fetched and points created for selected open_meteo_site_id.
+  if curl -sf -X POST "$API_BASE/run-fdd" -H "Content-Type: application/json" "${curl_auth[@]}" -d '{}' >/dev/null 2>&1; then
+    echo "  POST /run-fdd OK (FDD loop will run soon; weather points created for open_meteo_site_id)."
+  else
+    echo "  POST /run-fdd skipped or failed (weather will appear after next FDD run or weather scraper)."
   fi
   return 0
 }

@@ -80,6 +80,8 @@ def _fetch_platform_config_with_startup_retry(
     for attempt in range(1, attempts + 1):
         last_result = _fetch_platform_config(log)
         if last_result is not None:
+            _CONFIG_CACHE["ts"] = time.time()
+            _CONFIG_CACHE["cfg"] = last_result
             if attempt > 1:
                 log.info("GET /config recovered on attempt %d/%d", attempt, attempts)
             return last_result
@@ -96,7 +98,7 @@ def _fetch_platform_config_with_startup_retry(
         "GET /config unavailable after %d attempts; continuing with env/defaults.",
         attempts,
     )
-    return last_result
+    return None
 
 
 _CONFIG_CACHE: _PlatformConfigCache = {"ts": 0.0, "cfg": None}
@@ -126,7 +128,7 @@ def _resolve_bacnet_gateways_json(log: logging.Logger) -> str | None:
     Multi-gateway JSON: prefer GET /config (RDF/UI) so PUT /config applies without
     scraper restart; fall back to OFDD_BACNET_GATEWAYS / overlay env.
     """
-    cfg = _fetch_platform_config(log)
+    cfg = _fetch_platform_config_cached(log)
     if cfg:
         raw = cfg.get("bacnet_gateways")
         if raw is not None:

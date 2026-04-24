@@ -46,3 +46,18 @@ def test_fetch_platform_config_with_startup_retry_exhausts():
     assert out is None
     assert mocked_sleep.call_count == 3
 
+
+def test_fetch_platform_config_with_startup_retry_succeeds_first_attempt_no_sleep():
+    log = _DummyLogger()
+    expected = {"bacnet_scrape_interval_min": 5}
+    with patch(
+        "openfdd_stack.platform.drivers.run_bacnet_scrape._fetch_platform_config",
+        return_value=expected,
+    ) as mocked_fetch, patch("time.sleep") as mocked_sleep:
+        out = scrape._fetch_platform_config_with_startup_retry(
+            log, attempts=5, base_delay_sec=0.01
+        )
+    assert out == expected
+    mocked_fetch.assert_called_once()
+    mocked_sleep.assert_not_called()
+
