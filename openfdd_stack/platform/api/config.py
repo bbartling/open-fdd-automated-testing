@@ -47,6 +47,12 @@ CONFIG_KEYS = {
     "onboard_backfill_end",
     "onboard_site_id_strategy",
     "onboard_create_points",
+    "csv_enabled",
+    "csv_sources",
+    "csv_scrape_interval_min",
+    "csv_backfill_start",
+    "csv_backfill_end",
+    "csv_create_points",
     "graph_sync_interval_min",
 }
 
@@ -119,6 +125,23 @@ class ConfigBody(BaseModel):
     onboard_create_points: bool | None = Field(
         None,
         description="When true, ingest metadata can auto-create points before timeseries writes",
+    )
+    csv_enabled: bool | None = Field(None, description="Enable CSV ingestion")
+    csv_sources: str | None = Field(
+        None,
+        description='JSON array of CSV sources: [{"path":"...","site_id":"..."}]',
+    )
+    csv_scrape_interval_min: int | None = Field(
+        None, description="CSV scraper loop interval (minutes)"
+    )
+    csv_backfill_start: str | None = Field(
+        None, description="CSV backfill start timestamp (ISO-8601)"
+    )
+    csv_backfill_end: str | None = Field(
+        None, description="CSV backfill end timestamp (ISO-8601)"
+    )
+    csv_create_points: bool | None = Field(
+        None, description="When true, CSV ingest can auto-create points"
     )
     graph_sync_interval_min: int | None = Field(
         None, description="Graph sync to TTL (minutes)"

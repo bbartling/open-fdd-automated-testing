@@ -15,6 +15,7 @@
 !examples/*.csv
 !examples/data/*.csv
 !examples/AHU/*.csv
+!examples/csv/*.csv
 examples/run_all_rules_output.csv
 .vscode/
 

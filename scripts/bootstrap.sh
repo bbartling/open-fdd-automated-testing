@@ -19,7 +19,7 @@
 #   ./scripts/bootstrap.sh --update             # git pull this repo + diy-bacnet-server sibling, rebuild, restart (keeps DB)
 #   ./scripts/bootstrap.sh --maintenance        # safe prune only (NO volumes)
 #   ./scripts/bootstrap.sh --build api ...      # rebuild and restart only selected services
-#   (Available services: api, bacnet-server, bacnet-scraper, caddy, db, fdd-loop, frontend, grafana [--with-grafana], host-stats, mosquitto [--with-mqtt-bridge], onboard-scraper, weather-scraper)
+#   (Available services: api, bacnet-server, bacnet-scraper, caddy, csv-scraper, db, fdd-loop, frontend, grafana [--with-grafana], host-stats, mosquitto [--with-mqtt-bridge], onboard-scraper, weather-scraper)
 #   ./scripts/bootstrap.sh --build mcp-rag     # rebuild and restart only mcp-rag service
 #   ./scripts/bootstrap.sh --frontend          # before start: stop frontend, remove frontend node_modules volume (fresh npm install on next up)
 #   ./scripts/bootstrap.sh --reset-data        # delete all sites via API + POST /data-model/reset (testing; clears data model + timeseries)
@@ -97,6 +97,7 @@ NO_OPEN_FIREWALL=false
 RETENTION_DAYS=365
 LOG_MAX_SIZE="100m"
 LOG_MAX_FILES=3
+DRIVER_PROFILE_FILE="${OFDD_DRIVER_PROFILE_FILE:-$REPO_ROOT/config/drivers.yaml}"
 
 # Allow env overrides from stack/.env (if present)
 if [[ -f "$STACK_DIR/.env" ]]; then
@@ -114,6 +115,116 @@ if [[ -f "$STACK_DIR/.env" ]]; then
   [[ -n "${OFDD_LOG_MAX_SIZE:-}" ]] && LOG_MAX_SIZE="${OFDD_LOG_MAX_SIZE}"
   [[ -n "${OFDD_LOG_MAX_FILES:-}" ]] && LOG_MAX_FILES="${OFDD_LOG_MAX_FILES}"
 fi
+
+driver_profile_enabled() {
+  local key="$1"
+  local default_value="$2"
+  python3 - "$DRIVER_PROFILE_FILE" "$key" "$default_value" <<'PY'
+import pathlib
+import re
+import sys
+
+profile_path = pathlib.Path(sys.argv[1])
+key = sys.argv[2]
+default_raw = str(sys.argv[3]).strip().lower()
+default = default_raw in {"1", "true", "yes", "on"}
+
+def parse_bool(v):
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return bool(v)
+    s = str(v).strip().lower()
+    if s in {"1", "true", "yes", "on"}:
+        return True
+    if s in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+if not profile_path.exists():
+    print("true" if default else "false")
+    raise SystemExit(0)
+
+text = profile_path.read_text(encoding="utf-8")
+
+try:
+    import yaml  # type: ignore
+    data = yaml.safe_load(text) or {}
+    drivers = data.get("drivers", {}) if isinstance(data, dict) else {}
+    val = parse_bool(drivers.get(key))
+    if val is None:
+        val = default
+    print("true" if val else "false")
+    raise SystemExit(0)
+except Exception:
+    pass
+
+# Lightweight fallback parser for:
+# drivers:
+#   key: true|false|yes|no|1|0|on|off
+in_drivers = False
+driver_val = None
+for raw in text.splitlines():
+    line = raw.rstrip()
+    if not line.strip() or line.lstrip().startswith("#"):
+        continue
+    if re.match(r"^\s*drivers\s*:\s*$", line):
+        in_drivers = True
+        continue
+    if in_drivers and re.match(r"^\S", line):
+        in_drivers = False
+    if not in_drivers:
+        continue
+    m = re.match(r"^\s*" + re.escape(key) + r"\s*:\s*(.*?)\s*$", line)
+    if not m:
+        continue
+    token = m.group(1).split("#", 1)[0].strip().strip('"').strip("'")
+    parsed = parse_bool(token)
+    if parsed is not None:
+        driver_val = parsed
+    break
+
+if driver_val is None:
+    driver_val = default
+print("true" if driver_val else "false")
+PY
+}
+
+driver_services_for_mode() {
+  local mode="$1"
+  local use_bacnet use_fdd use_weather use_onboard use_csv use_host_stats
+  use_bacnet="$(driver_profile_enabled "bacnet" "true")"
+  use_fdd="$(driver_profile_enabled "fdd" "true")"
+  use_weather="$(driver_profile_enabled "weather" "true")"
+  use_onboard="$(driver_profile_enabled "onboard" "false")"
+  use_csv="$(driver_profile_enabled "csv" "false")"
+  use_host_stats="$(driver_profile_enabled "host_stats" "true")"
+
+  local svc=""
+  if [[ "$mode" == "full" ]]; then
+    svc="db api frontend caddy"
+    [[ "$use_host_stats" == "true" ]] && svc="$svc host-stats"
+    if [[ "$use_bacnet" == "true" ]]; then
+      svc="$svc bacnet-server bacnet-scraper"
+    fi
+    [[ "$use_fdd" == "true" ]] && svc="$svc fdd-loop"
+    [[ "$use_weather" == "true" ]] && svc="$svc weather-scraper"
+    [[ "$use_onboard" == "true" ]] && svc="$svc onboard-scraper"
+    [[ "$use_csv" == "true" ]] && svc="$svc csv-scraper"
+  elif [[ "$mode" == "engine" ]]; then
+    svc="db"
+    [[ "$use_fdd" == "true" ]] && svc="$svc fdd-loop"
+    [[ "$use_weather" == "true" ]] && svc="$svc weather-scraper"
+    [[ "$use_onboard" == "true" ]] && svc="$svc onboard-scraper"
+    [[ "$use_csv" == "true" ]] && svc="$svc csv-scraper"
+  elif [[ "$mode" == "collector" ]]; then
+    svc="db"
+    if [[ "$use_bacnet" == "true" ]]; then
+      svc="$svc bacnet-server bacnet-scraper"
+    fi
+  fi
+  echo "$svc"
+}
 
 # Used by --build SERVICE ...
 BUILD_SERVICES_STR=""
@@ -229,6 +340,7 @@ Core:
   --minimal                 Start minimal stack (db, bacnet-server, bacnet-scraper; add --with-grafana for Grafana)
   --mode MODE              Partial deployment mode: full, collector, model, engine (default: full)
                            Note: in engine mode, onboard-scraper is useful only when OFDD_ONBOARD_ENABLED=true.
+                           Driver services can be profile-driven via config/drivers.yaml.
   --with-grafana            Include Grafana (http://localhost:3000; optional SQL dashboards)
   --with-mqtt-bridge        Start Mosquitto + wire BACnet2MQTT env (experimental; future remote/MQTT use—not core product yet)
   --with-mcp-rag            Include MCP RAG service (http://localhost:8090; retrieval over this repo docs + generated text + sparse-cloned upstream docs/ from open-fdd, diy-bacnet-server, easy-aso; see stack/mcp-rag/.vendor-docs/)
@@ -245,7 +357,7 @@ Core:
 
 Build controls:
   --build SERVICE ...       Rebuild + restart only these services, then exit
-                           Services: api, bacnet-server, bacnet-scraper, caddy, db, fdd-loop, frontend, grafana, host-stats, mcp-rag, mosquitto, onboard-scraper, weather-scraper
+                           Services: api, bacnet-server, bacnet-scraper, caddy, csv-scraper, db, fdd-loop, frontend, grafana, host-stats, mcp-rag, mosquitto, onboard-scraper, weather-scraper
   --build-all               Rebuild + restart all services, then exit
   --frontend                Before start: stop frontend, remove frontend node_modules volume (fresh npm install on next up; use after package.json changes)
 
@@ -2153,9 +2265,15 @@ print(json.dumps({
     'onboard_backfill_end': os.environ.get('OFDD_ONBOARD_BACKFILL_END') or None,
     'onboard_site_id_strategy': os.environ.get('OFDD_ONBOARD_SITE_ID_STRATEGY', 'onboard-building-id'),
     'onboard_create_points': env('OFDD_ONBOARD_CREATE_POINTS', True),
+    'csv_enabled': env('OFDD_CSV_ENABLED', False),
+    'csv_sources': os.environ.get('OFDD_CSV_SOURCES', ''),
+    'csv_scrape_interval_min': env('OFDD_CSV_SCRAPE_INTERVAL_MIN', 180),
+    'csv_backfill_start': os.environ.get('OFDD_CSV_BACKFILL_START') or None,
+    'csv_backfill_end': os.environ.get('OFDD_CSV_BACKFILL_END') or None,
+    'csv_create_points': env('OFDD_CSV_CREATE_POINTS', True),
     'graph_sync_interval_min': env('OFDD_GRAPH_SYNC_INTERVAL_MIN', 5),
 }))
-" 2>/dev/null) || body="{\"rule_interval_hours\":0.1,\"lookback_days\":3,\"rules_dir\":\"stack/rules\",\"brick_ttl_dir\":\"config\",\"bacnet_enabled\":true,\"bacnet_scrape_interval_min\":5,\"bacnet_server_url\":\"http://caddy:8081\",\"bacnet_site_id\":\"default\",\"open_meteo_enabled\":true,\"open_meteo_interval_hours\":24,\"open_meteo_latitude\":41.88,\"open_meteo_longitude\":-87.63,\"open_meteo_timezone\":\"America/Chicago\",\"open_meteo_days_back\":3,\"open_meteo_site_id\":\"default\",\"onboard_enabled\":false,\"onboard_api_base_url\":\"https://api.onboarddata.io\",\"onboard_building_ids\":\"\",\"onboard_scrape_interval_min\":180,\"onboard_backfill_start\":null,\"onboard_backfill_end\":null,\"onboard_site_id_strategy\":\"onboard-building-id\",\"onboard_create_points\":true,\"graph_sync_interval_min\":5}"
+" 2>/dev/null) || body="{\"rule_interval_hours\":0.1,\"lookback_days\":3,\"rules_dir\":\"stack/rules\",\"brick_ttl_dir\":\"config\",\"bacnet_enabled\":true,\"bacnet_scrape_interval_min\":5,\"bacnet_server_url\":\"http://caddy:8081\",\"bacnet_site_id\":\"default\",\"open_meteo_enabled\":true,\"open_meteo_interval_hours\":24,\"open_meteo_latitude\":41.88,\"open_meteo_longitude\":-87.63,\"open_meteo_timezone\":\"America/Chicago\",\"open_meteo_days_back\":3,\"open_meteo_site_id\":\"default\",\"onboard_enabled\":false,\"onboard_api_base_url\":\"https://api.onboarddata.io\",\"onboard_building_ids\":\"\",\"onboard_scrape_interval_min\":180,\"onboard_backfill_start\":null,\"onboard_backfill_end\":null,\"onboard_site_id_strategy\":\"onboard-building-id\",\"onboard_create_points\":true,\"csv_enabled\":false,\"csv_sources\":\"\",\"csv_scrape_interval_min\":180,\"csv_backfill_start\":null,\"csv_backfill_end\":null,\"csv_create_points\":true,\"graph_sync_interval_min\":5}"
 
   if curl -sf -X PUT "$API_BASE/config" -H "Content-Type: application/json" "${curl_auth[@]}" -d "$body" >/dev/null 2>&1; then
     echo "  PUT /config OK (config stored in RDF)."
@@ -2232,9 +2350,15 @@ print(json.dumps({
   'onboard_backfill_end': None,
   'onboard_site_id_strategy': 'onboard-building-id',
   'onboard_create_points': True,
+  'csv_enabled': False,
+  'csv_sources': '',
+  'csv_scrape_interval_min': 180,
+  'csv_backfill_start': None,
+  'csv_backfill_end': None,
+  'csv_create_points': True,
   'graph_sync_interval_min': 5,
 }))
-" 2>/dev/null)" || body='{"rule_interval_hours":3.0,"lookback_days":3,"rules_dir":"stack/rules","brick_ttl_dir":"config","bacnet_enabled":true,"bacnet_scrape_interval_min":5,"bacnet_server_url":"http://caddy:8081","bacnet_site_id":"default","bacnet_gateways":"","open_meteo_enabled":true,"open_meteo_interval_hours":24,"open_meteo_latitude":41.88,"open_meteo_longitude":-87.63,"open_meteo_timezone":"America/Chicago","open_meteo_days_back":3,"open_meteo_site_id":"default","onboard_enabled":false,"onboard_api_base_url":"https://api.onboarddata.io","onboard_building_ids":"","onboard_scrape_interval_min":180,"onboard_backfill_start":null,"onboard_backfill_end":null,"onboard_site_id_strategy":"onboard-building-id","onboard_create_points":true,"graph_sync_interval_min":5}'
+" 2>/dev/null)" || body='{"rule_interval_hours":3.0,"lookback_days":3,"rules_dir":"stack/rules","brick_ttl_dir":"config","bacnet_enabled":true,"bacnet_scrape_interval_min":5,"bacnet_server_url":"http://caddy:8081","bacnet_site_id":"default","bacnet_gateways":"","open_meteo_enabled":true,"open_meteo_interval_hours":24,"open_meteo_latitude":41.88,"open_meteo_longitude":-87.63,"open_meteo_timezone":"America/Chicago","open_meteo_days_back":3,"open_meteo_site_id":"default","onboard_enabled":false,"onboard_api_base_url":"https://api.onboarddata.io","onboard_building_ids":"","onboard_scrape_interval_min":180,"onboard_backfill_start":null,"onboard_backfill_end":null,"onboard_site_id_strategy":"onboard-building-id","onboard_create_points":true,"csv_enabled":false,"csv_sources":"","csv_scrape_interval_min":180,"csv_backfill_start":null,"csv_backfill_end":null,"csv_create_points":true,"graph_sync_interval_min":5}'
   resp_file="$(mktemp -t ofdd_enforce_network_default_XXXXXX)"
   http_code="$(curl -sS -o "$resp_file" -w "%{http_code}" -X PUT "$API_BASE/config" -H "Content-Type: application/json" "${curl_auth[@]}" -d "$body" 2>/dev/null || echo "000")"
   resp="$(cat "$resp_file" 2>/dev/null || true)"
@@ -2658,20 +2782,26 @@ if [[ "$MODE" == "full" || "$MODE" == "model" ]]; then
 fi
 
 if [[ "$MODE" == "collector" ]]; then
-  ensure_collector_mode_bacnet_server_url
-  echo "=== Starting collector mode (DB + BACnet server + scraper) ==="
-  svc="db bacnet-server bacnet-scraper"
+  svc="$(driver_services_for_mode "collector")"
+  if echo " $svc " | grep -q " bacnet-scraper "; then
+    ensure_collector_mode_bacnet_server_url
+    echo "=== Starting collector mode (DB + BACnet server + scraper) ==="
+  else
+    echo "=== Starting collector mode (DB only; bacnet disabled by driver profile) ==="
+  fi
   $WITH_GRAFANA && svc="$svc grafana"
   $dc "${DC_PROFILE[@]}" up -d --build $svc
 elif [[ "$MODE" == "model" ]]; then
   echo "=== Starting model mode (DB + API + frontend + caddy) ==="
   $dc "${DC_PROFILE[@]}" up -d --build db api frontend caddy
 elif [[ "$MODE" == "engine" ]]; then
-  echo "=== Starting engine mode (DB + FDD + weather + onboard loops) ==="
-  $dc "${DC_PROFILE[@]}" up -d --build db fdd-loop weather-scraper onboard-scraper
+  svc="$(driver_services_for_mode "engine")"
+  echo "=== Starting engine mode (profile-driven services): $svc ==="
+  $dc "${DC_PROFILE[@]}" up -d --build $svc
 else
-  echo "=== Building and starting full stack ==="
-  $dc "${DC_PROFILE[@]}" up -d --build
+  svc="$(driver_services_for_mode "full")"
+  echo "=== Building and starting full stack (profile-driven services): $svc ==="
+  $dc "${DC_PROFILE[@]}" up -d --build $svc
 fi
 
 bootstrap_compose_force_recreate_if_needed
@@ -2726,7 +2856,7 @@ elif [[ "$MODE" == "model" ]]; then
   bootstrap_print_remote_access_hints
   echo "  (Model mode: knowledge graph and CRUD workflows.)"
 elif [[ "$MODE" == "engine" ]]; then
-  echo "  (Engine mode: FDD, weather, and onboard loops with DB. No API/frontend by default.)"
+  echo "  (Engine mode: profile-driven loop services with DB. No API/frontend by default.)"
 else
   if grep -qE '^OFDD_ENABLE_OPENAPI_DOCS=true' "$STACK_DIR/.env" 2>/dev/null; then
     echo "  API:      http://127.0.0.1:8000   (Swagger/OpenAPI: /docs — on this host only)"

@@ -61,6 +61,12 @@ CONFIG_KEY_TO_PREDICATE = {
     "onboard_backfill_end": "onboardBackfillEnd",
     "onboard_site_id_strategy": "onboardSiteIdStrategy",
     "onboard_create_points": "onboardCreatePoints",
+    "csv_enabled": "csvEnabled",
+    "csv_sources": "csvSources",
+    "csv_scrape_interval_min": "csvScrapeIntervalMin",
+    "csv_backfill_start": "csvBackfillStart",
+    "csv_backfill_end": "csvBackfillEnd",
+    "csv_create_points": "csvCreatePoints",
     "graph_sync_interval_min": "graphSyncIntervalMin",
 }
 CONFIG_PREDICATE_TO_KEY = {v: k for k, v in CONFIG_KEY_TO_PREDICATE.items()}

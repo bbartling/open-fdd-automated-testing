@@ -44,6 +44,14 @@ DEFAULT_ONBOARD_BACKFILL_END = None
 DEFAULT_ONBOARD_SITE_ID_STRATEGY = "onboard-building-id"
 DEFAULT_ONBOARD_CREATE_POINTS = True
 
+# CSV ingestion
+DEFAULT_CSV_ENABLED = False
+DEFAULT_CSV_SOURCES = ""
+DEFAULT_CSV_SCRAPE_INTERVAL_MIN = 180
+DEFAULT_CSV_BACKFILL_START = None
+DEFAULT_CSV_BACKFILL_END = None
+DEFAULT_CSV_CREATE_POINTS = True
+
 # Graph sync to TTL file
 DEFAULT_GRAPH_SYNC_INTERVAL_MIN = 5
 
@@ -77,5 +85,11 @@ DEFAULT_PLATFORM_CONFIG: dict = {
     "onboard_backfill_end": DEFAULT_ONBOARD_BACKFILL_END,
     "onboard_site_id_strategy": DEFAULT_ONBOARD_SITE_ID_STRATEGY,
     "onboard_create_points": DEFAULT_ONBOARD_CREATE_POINTS,
+    "csv_enabled": DEFAULT_CSV_ENABLED,
+    "csv_sources": DEFAULT_CSV_SOURCES,
+    "csv_scrape_interval_min": DEFAULT_CSV_SCRAPE_INTERVAL_MIN,
+    "csv_backfill_start": DEFAULT_CSV_BACKFILL_START,
+    "csv_backfill_end": DEFAULT_CSV_BACKFILL_END,
+    "csv_create_points": DEFAULT_CSV_CREATE_POINTS,
     "graph_sync_interval_min": DEFAULT_GRAPH_SYNC_INTERVAL_MIN,
 }

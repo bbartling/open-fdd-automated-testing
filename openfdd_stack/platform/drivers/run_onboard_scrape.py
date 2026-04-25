@@ -84,10 +84,10 @@ def main() -> int:
     setup_logging(args.verbose)
     log = logging.getLogger("open_fdd.onboard")
 
-    settings = get_platform_settings()
     prev_interval_min: int | None = None
 
     while True:
+        settings = get_platform_settings()
         cfg = _fetch_platform_config_cached(log)
         enabled = bool(_cfg_value(cfg, "onboard_enabled", settings.onboard_enabled))
         if not enabled:

@@ -1,0 +1,17 @@
+# Driver profile consumed by scripts/bootstrap.sh.
+# Home Assistant-inspired toggles for which runtime loops/services are started.
+#
+# Notes:
+# - full mode always includes: db, api, frontend, caddy
+# - engine mode always includes: db
+# - collector mode always includes: db
+# - bacnet=true enables both bacnet-server and bacnet-scraper (full/collector)
+# - fdd/weather/onboard/csv map to loop services with same names.
+
+drivers:
+  bacnet: true
+  fdd: true
+  weather: true
+  onboard: false
+  csv: false
+  host_stats: true

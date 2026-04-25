@@ -144,6 +144,7 @@ def test_run_onboard_ingest_once_runs_incremental_after_backfill(monkeypatch):
     now_end = datetime(2021, 5, 1, 10, tzinfo=timezone.utc)
     save_calls: list[tuple] = []
     insert_calls: list[int] = []
+    window_steps: list[int] = []
 
     class _FakeClient:
         def __init__(self, base_url: str, api_key: str):
@@ -187,7 +188,9 @@ def test_run_onboard_ingest_once_runs_incremental_after_backfill(monkeypatch):
         ),
     )
     monkeypatch.setattr(
-        onboard, "_window_chunks", lambda _s, _e, step_minutes=180: [(now_start, now_end)]
+        onboard,
+        "_window_chunks",
+        lambda _s, _e, step_minutes=180: window_steps.append(step_minutes) or [(now_start, now_end)],
     )
     monkeypatch.setattr(onboard, "_upsert_points_for_building", lambda *_args, **_kwargs: ({101: uuid4()}, 1))
     monkeypatch.setattr(
@@ -200,7 +203,7 @@ def test_run_onboard_ingest_once_runs_incremental_after_backfill(monkeypatch):
         base_url="https://api.onboarddata.io",
         api_key="test-key",
         building_filters=["Office Building"],
-        backfill_start=now_start,
+        backfill_start=None,
         scrape_interval_min=180,
         site_id_strategy="onboard-building-id",
         create_points=True,
@@ -210,3 +213,4 @@ def test_run_onboard_ingest_once_runs_incremental_after_backfill(monkeypatch):
     assert summary["rows_inserted"] >= 1
     assert insert_calls
     assert save_calls and save_calls[0][1] is True
+    assert window_steps == [180]

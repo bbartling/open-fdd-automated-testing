@@ -164,6 +164,38 @@ services:
       driver: json-file
       options: *log-opts
 
+  # CSV scraper — local CSV files to timeseries (historical replay friendly)
+  csv-scraper:
+    build:
+      context: ..
+      dockerfile: stack/Dockerfile.weather_scraper
+    container_name: openfdd_csv_scraper
+    command: ["python", "-u", "-m", "openfdd_stack.platform.drivers.run_csv_scrape", "--loop"]
+    environment:
+      OFDD_API_URL: http://api:8000
+      OFDD_API_KEY: ${OFDD_API_KEY:-}
+      OFDD_DB_DSN: postgresql://postgres:postgres@db:5432/openfdd
+      OFDD_CSV_ENABLED: "${OFDD_CSV_ENABLED:-false}"
+      OFDD_CSV_SOURCES: "${OFDD_CSV_SOURCES:-}"
+      OFDD_CSV_SCRAPE_INTERVAL_MIN: "${OFDD_CSV_SCRAPE_INTERVAL_MIN:-180}"
+      OFDD_CSV_BACKFILL_START: "${OFDD_CSV_BACKFILL_START:-}"
+      OFDD_CSV_BACKFILL_END: "${OFDD_CSV_BACKFILL_END:-}"
+      OFDD_CSV_CREATE_POINTS: "${OFDD_CSV_CREATE_POINTS:-true}"
+    volumes:
+      - ../examples/csv:/app/examples/csv:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+    networks:
+      - default
+      - shared
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: *log-opts
+
   db:
     image: timescale/timescaledb:latest-pg16
     container_name: openfdd_timescale

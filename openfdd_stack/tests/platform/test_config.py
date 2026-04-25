@@ -109,6 +109,8 @@ def test_platform_settings_defaults():
     assert s.onboard_enabled is False
     assert s.onboard_api_base_url == "https://api.onboarddata.io"
     assert s.onboard_scrape_interval_min == 180
+    assert s.csv_enabled is False
+    assert s.csv_scrape_interval_min == 180
 
 
 def test_platform_settings_overlay(monkeypatch):
@@ -144,6 +146,12 @@ def test_default_platform_config_includes_onboard_keys():
     assert "onboard_backfill_end" in DEFAULT_PLATFORM_CONFIG
     assert "onboard_site_id_strategy" in DEFAULT_PLATFORM_CONFIG
     assert "onboard_create_points" in DEFAULT_PLATFORM_CONFIG
+    assert "csv_enabled" in DEFAULT_PLATFORM_CONFIG
+    assert "csv_sources" in DEFAULT_PLATFORM_CONFIG
+    assert "csv_scrape_interval_min" in DEFAULT_PLATFORM_CONFIG
+    assert "csv_backfill_start" in DEFAULT_PLATFORM_CONFIG
+    assert "csv_backfill_end" in DEFAULT_PLATFORM_CONFIG
+    assert "csv_create_points" in DEFAULT_PLATFORM_CONFIG
 
 
 def test_config_display_preserves_zero_rule_interval():

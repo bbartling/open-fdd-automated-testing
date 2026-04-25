@@ -66,11 +66,13 @@ class PlatformSettings(BaseSettings):
     bacnet_scrape_interval_min: int = 5
     open_meteo_interval_hours: int = 24
     onboard_scrape_interval_min: int = 180
+    csv_scrape_interval_min: int = 180
 
     # Driver on/off (like Volttron agent enable/disable)
     bacnet_scrape_enabled: bool = True
     open_meteo_enabled: bool = True
     onboard_enabled: bool = False
+    csv_enabled: bool = False
 
     # Open-Meteo: geo and fetch window (used when open_meteo_enabled)
     open_meteo_latitude: float = 41.88
@@ -87,6 +89,12 @@ class PlatformSettings(BaseSettings):
     onboard_backfill_end: Optional[str] = None
     onboard_site_id_strategy: str = "onboard-building-id"
     onboard_create_points: bool = True
+
+    # CSV ingestion (local files -> points/timeseries)
+    csv_sources: str = ""
+    csv_backfill_start: Optional[str] = None
+    csv_backfill_end: Optional[str] = None
+    csv_create_points: bool = True
 
     # Graph model: sync in-memory graph to data_model.ttl every N minutes
     graph_sync_interval_min: int = 5

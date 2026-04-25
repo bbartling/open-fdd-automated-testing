@@ -11,7 +11,21 @@ def fallback_api_key_from_stack_env() -> str:
     if not env_path.exists():
         return ""
     for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-        if not raw_line.startswith("OFDD_ONBOARD_API_KEY="):
+        line = raw_line.strip()
+        if not line:
             continue
-        return raw_line.split("=", 1)[1].strip().strip("'").strip('"')
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+        if not line.startswith("OFDD_ONBOARD_API_KEY="):
+            continue
+        value = line.split("=", 1)[1].strip()
+        if not value:
+            return ""
+        if (value.startswith("'") and value.endswith("'")) or (
+            value.startswith('"') and value.endswith('"')
+        ):
+            return value[1:-1].strip()
+        if "#" in value:
+            value = value.split("#", 1)[0].rstrip()
+        return value.strip()
     return ""

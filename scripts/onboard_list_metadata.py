@@ -51,7 +51,12 @@ def main() -> int:
 
     out: list[dict] = []
     for b in buildings:
-        bldg_id = int(b["id"])
+        if not isinstance(b, dict):
+            continue
+        try:
+            bldg_id = int(b["id"])
+        except (KeyError, TypeError, ValueError):
+            continue
         points = client.get_points(bldg_id)
         out.append(
             {

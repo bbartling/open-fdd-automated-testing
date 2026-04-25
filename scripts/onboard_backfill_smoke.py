@@ -16,6 +16,17 @@ from openfdd_stack.platform.drivers.onboard import (
 from _onboard_cli import fallback_api_key_from_stack_env
 
 
+def parse_bool_env(value: str | None, default: bool = True) -> bool:
+    if value is None:
+        return default
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Onboard one-shot ingest smoke test")
     parser.add_argument(
@@ -57,7 +68,7 @@ def main() -> int:
     parser.add_argument(
         "--create-points",
         action=argparse.BooleanOptionalAction,
-        default=os.getenv("OFDD_ONBOARD_CREATE_POINTS", "true").lower() == "true",
+        default=parse_bool_env(os.getenv("OFDD_ONBOARD_CREATE_POINTS", "true"), default=True),
     )
     parser.add_argument(
         "--no-stack-env-fallback",

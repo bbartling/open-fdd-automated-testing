@@ -378,10 +378,15 @@ def run_onboard_ingest_once(
                                 rows = _extract_rows_from_query_result(point_map, site_uuid, q)
                                 total_rows_this_building += _insert_timeseries_rows(cur, rows)
 
+                    if backfill_start is None:
+                        backfill_done = bool(state.get("backfill_done"))
+                    else:
+                        target_end = backfill_end if backfill_end is not None else now_utc
+                        backfill_done = inc_end >= target_end
                     _save_state(
                         cur,
                         state_key,
-                        backfill_start is not None,
+                        backfill_done,
                         inc_end,
                     )
                     summary["rows_inserted"] += total_rows_this_building
