@@ -30,6 +30,16 @@ DEFAULT_OPEN_METEO_TIMEZONE = "America/Chicago"
 DEFAULT_OPEN_METEO_DAYS_BACK = 3
 DEFAULT_OPEN_METEO_SITE_ID = "default"
 
+# Onboard API
+DEFAULT_ONBOARD_ENABLED = False
+DEFAULT_ONBOARD_API_BASE_URL = "https://api.onboarddata.io"
+DEFAULT_ONBOARD_BUILDING_IDS = ""
+DEFAULT_ONBOARD_SCRAPE_INTERVAL_MIN = 15
+DEFAULT_ONBOARD_BACKFILL_START = None
+DEFAULT_ONBOARD_BACKFILL_END = None
+DEFAULT_ONBOARD_SITE_ID_STRATEGY = "onboard-building-id"
+DEFAULT_ONBOARD_CREATE_POINTS = True
+
 # Graph sync to TTL file
 DEFAULT_GRAPH_SYNC_INTERVAL_MIN = 5
 
@@ -51,5 +61,13 @@ DEFAULT_PLATFORM_CONFIG: dict = {
     "open_meteo_timezone": DEFAULT_OPEN_METEO_TIMEZONE,
     "open_meteo_days_back": DEFAULT_OPEN_METEO_DAYS_BACK,
     "open_meteo_site_id": DEFAULT_OPEN_METEO_SITE_ID,
+    "onboard_enabled": DEFAULT_ONBOARD_ENABLED,
+    "onboard_api_base_url": DEFAULT_ONBOARD_API_BASE_URL,
+    "onboard_building_ids": DEFAULT_ONBOARD_BUILDING_IDS,
+    "onboard_scrape_interval_min": DEFAULT_ONBOARD_SCRAPE_INTERVAL_MIN,
+    "onboard_backfill_start": DEFAULT_ONBOARD_BACKFILL_START,
+    "onboard_backfill_end": DEFAULT_ONBOARD_BACKFILL_END,
+    "onboard_site_id_strategy": DEFAULT_ONBOARD_SITE_ID_STRATEGY,
+    "onboard_create_points": DEFAULT_ONBOARD_CREATE_POINTS,
     "graph_sync_interval_min": DEFAULT_GRAPH_SYNC_INTERVAL_MIN,
 }

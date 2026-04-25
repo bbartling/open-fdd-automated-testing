@@ -131,6 +131,37 @@ services:
       driver: json-file
       options: *log-opts
 
+  # Onboard API scraper — read-only metadata + timeseries ingestion
+  onboard-scraper:
+    build:
+      context: ..
+      dockerfile: stack/Dockerfile.weather_scraper
+    container_name: openfdd_onboard_scraper
+    command: ["python", "-u", "-m", "openfdd_stack.platform.drivers.run_onboard_scrape", "--loop"]
+    environment:
+      OFDD_API_URL: http://api:8000
+      OFDD_API_KEY: ${OFDD_API_KEY:-}
+      OFDD_DB_DSN: postgresql://postgres:postgres@db:5432/openfdd
+      OFDD_ONBOARD_ENABLED: "${OFDD_ONBOARD_ENABLED:-false}"
+      OFDD_ONBOARD_API_BASE_URL: "${OFDD_ONBOARD_API_BASE_URL:-https://api.onboarddata.io}"
+      OFDD_ONBOARD_API_KEY: "${OFDD_ONBOARD_API_KEY:-}"
+      OFDD_ONBOARD_BUILDING_IDS: "${OFDD_ONBOARD_BUILDING_IDS:-}"
+      OFDD_ONBOARD_SCRAPE_INTERVAL_MIN: "${OFDD_ONBOARD_SCRAPE_INTERVAL_MIN:-15}"
+      OFDD_ONBOARD_BACKFILL_START: "${OFDD_ONBOARD_BACKFILL_START:-}"
+      OFDD_ONBOARD_BACKFILL_END: "${OFDD_ONBOARD_BACKFILL_END:-}"
+      OFDD_ONBOARD_SITE_ID_STRATEGY: "${OFDD_ONBOARD_SITE_ID_STRATEGY:-onboard-building-id}"
+      OFDD_ONBOARD_CREATE_POINTS: "${OFDD_ONBOARD_CREATE_POINTS:-true}"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - default
+      - shared
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: *log-opts
+
   db:
     image: timescale/timescaledb:latest-pg16
     container_name: openfdd_timescale

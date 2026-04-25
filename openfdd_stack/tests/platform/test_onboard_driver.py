@@ -1,0 +1,137 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from uuid import uuid4
+
+from openfdd_stack.platform.drivers import onboard
+
+
+def test_parse_building_ids_accepts_csv_and_json():
+    assert onboard.parse_building_ids("66,67") == [66, 67]
+    assert onboard.parse_building_ids("[66, 67]") == [66, 67]
+    assert onboard.parse_building_ids("") == []
+
+
+def test_extract_rows_from_query_result_uses_converted_value():
+    site_id = uuid4()
+    point_id = uuid4()
+    rows = onboard._extract_rows_from_query_result(
+        {162748: point_id},
+        site_id,
+        [
+            {
+                "point_id": 162748,
+                "columns": ["time", "raw", "F"],
+                "values": [["2021-05-01T08:00:01Z", "61.5", 61.5]],
+            }
+        ],
+    )
+    assert len(rows) == 1
+    assert rows[0][1] == str(site_id)
+    assert rows[0][2] == point_id
+    assert rows[0][3] == 61.5
+
+
+def test_window_chunks_splits_time_range():
+    start = datetime(2021, 5, 1, 8, tzinfo=timezone.utc)
+    end = datetime(2021, 5, 1, 18, tzinfo=timezone.utc)
+    chunks = onboard._window_chunks(start, end, step_hours=4)
+    assert len(chunks) == 3
+    assert chunks[0] == (start, datetime(2021, 5, 1, 12, tzinfo=timezone.utc))
+    assert chunks[-1] == (datetime(2021, 5, 1, 16, tzinfo=timezone.utc), end)
+
+
+class _DummyCursor:
+    def execute(self, _sql, _args=None):
+        return None
+
+
+class _DummyConn:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def cursor(self):
+        class _Ctx:
+            def __enter__(self_nonlocal):
+                return _DummyCursor()
+
+            def __exit__(self_nonlocal, exc_type, exc, tb):
+                return False
+
+        return _Ctx()
+
+    def commit(self):
+        return None
+
+
+def test_run_onboard_ingest_once_runs_backfill_then_incremental(monkeypatch):
+    building = {"id": 66, "name": "Example Building"}
+    now_start = datetime(2021, 5, 1, 8, tzinfo=timezone.utc)
+    now_end = datetime(2021, 5, 1, 10, tzinfo=timezone.utc)
+    save_calls: list[tuple] = []
+    insert_calls: list[int] = []
+
+    class _FakeClient:
+        def __init__(self, base_url: str, api_key: str):
+            self.base_url = base_url
+            self.api_key = api_key
+
+        def get_buildings(self, building_ids):
+            assert building_ids == [66]
+            return [building]
+
+        def get_points(self, building_id):
+            assert building_id == 66
+            return [{"id": 101, "topic": "onboard/topic/101"}]
+
+        def query_v2(self, _start, _end, _point_ids):
+            return [
+                {
+                    "point_id": 101,
+                    "columns": ["time", "raw", "F"],
+                    "values": [["2021-05-01T08:00:01Z", "61.5", 61.5]],
+                }
+            ]
+
+    monkeypatch.setattr(onboard, "OnboardClient", _FakeClient)
+    monkeypatch.setattr(onboard, "get_conn", lambda: _DummyConn())
+    monkeypatch.setattr(onboard, "resolve_site_uuid", lambda *_args, **_kwargs: uuid4())
+    monkeypatch.setattr(onboard, "_ensure_state_table", lambda _cur: None)
+    monkeypatch.setattr(
+        onboard,
+        "_load_state",
+        lambda _cur, _key: {"state_key": "onboard:66", "backfill_done": False, "last_poll_end": None},
+    )
+    monkeypatch.setattr(
+        onboard,
+        "_save_state",
+        lambda _cur, key, backfill_done, last_poll_end: save_calls.append(
+            (key, backfill_done, last_poll_end)
+        ),
+    )
+    monkeypatch.setattr(onboard, "_window_chunks", lambda _s, _e: [(now_start, now_end)])
+    monkeypatch.setattr(onboard, "_upsert_points_for_building", lambda *_args, **_kwargs: ({101: uuid4()}, 1))
+    monkeypatch.setattr(
+        onboard,
+        "_insert_timeseries_rows",
+        lambda _cur, rows: insert_calls.append(len(rows)) or len(rows),
+    )
+    summary = onboard.run_onboard_ingest_once(
+        log=type("L", (), {"info": lambda *a, **k: None, "warning": lambda *a, **k: None})(),
+        base_url="https://api.onboarddata.io",
+        api_key="test-key",
+        building_ids=[66],
+        backfill_start=now_start,
+        backfill_end=now_end,
+        incremental_lookback_min=15,
+        site_id_strategy="onboard-building-id",
+        create_points=True,
+    )
+    assert summary["buildings"] == 1
+    assert summary["points_seen"] == 1
+    assert summary["rows_inserted"] >= 1
+    assert insert_calls
+    assert save_calls and save_calls[0][1] is True

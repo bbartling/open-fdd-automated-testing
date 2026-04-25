@@ -35,6 +35,14 @@ CONFIG_KEYS = {
     "open_meteo_timezone",
     "open_meteo_days_back",
     "open_meteo_site_id",
+    "onboard_enabled",
+    "onboard_api_base_url",
+    "onboard_building_ids",
+    "onboard_scrape_interval_min",
+    "onboard_backfill_start",
+    "onboard_backfill_end",
+    "onboard_site_id_strategy",
+    "onboard_create_points",
     "graph_sync_interval_min",
 }
 
@@ -71,6 +79,31 @@ class ConfigBody(BaseModel):
         None, description="Days of weather to fetch"
     )
     open_meteo_site_id: str | None = Field(None, description="Site for weather points")
+    onboard_enabled: bool | None = Field(None, description="Enable Onboard API ingestion")
+    onboard_api_base_url: str | None = Field(
+        None, description="Onboard API base URL"
+    )
+    onboard_building_ids: str | None = Field(
+        None,
+        description="Comma-separated building IDs to ingest from Onboard",
+    )
+    onboard_scrape_interval_min: int | None = Field(
+        None, description="Onboard incremental scrape interval (minutes)"
+    )
+    onboard_backfill_start: str | None = Field(
+        None, description="Onboard backfill window start timestamp (ISO-8601)"
+    )
+    onboard_backfill_end: str | None = Field(
+        None, description="Onboard backfill window end timestamp (ISO-8601)"
+    )
+    onboard_site_id_strategy: str | None = Field(
+        None,
+        description='Site mapping strategy for Onboard buildings ("default" or "onboard-building-id")',
+    )
+    onboard_create_points: bool | None = Field(
+        None,
+        description="When true, ingest metadata can auto-create points before timeseries writes",
+    )
     graph_sync_interval_min: int | None = Field(
         None, description="Graph sync to TTL (minutes)"
     )

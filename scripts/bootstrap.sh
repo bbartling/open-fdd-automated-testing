@@ -19,7 +19,7 @@
 #   ./scripts/bootstrap.sh --update             # git pull this repo + diy-bacnet-server sibling, rebuild, restart (keeps DB)
 #   ./scripts/bootstrap.sh --maintenance        # safe prune only (NO volumes)
 #   ./scripts/bootstrap.sh --build api ...      # rebuild and restart only selected services
-#   (Available services: api, bacnet-server, bacnet-scraper, caddy, db, fdd-loop, frontend, grafana [--with-grafana], host-stats, mosquitto [--with-mqtt-bridge], weather-scraper)
+#   (Available services: api, bacnet-server, bacnet-scraper, caddy, db, fdd-loop, frontend, grafana [--with-grafana], host-stats, mosquitto [--with-mqtt-bridge], onboard-scraper, weather-scraper)
 #   ./scripts/bootstrap.sh --build mcp-rag     # rebuild and restart only mcp-rag service
 #   ./scripts/bootstrap.sh --frontend          # before start: stop frontend, remove frontend node_modules volume (fresh npm install on next up)
 #   ./scripts/bootstrap.sh --reset-data        # delete all sites via API + POST /data-model/reset (testing; clears data model + timeseries)
@@ -244,7 +244,7 @@ Core:
 
 Build controls:
   --build SERVICE ...       Rebuild + restart only these services, then exit
-                           Services: api, bacnet-server, bacnet-scraper, caddy, db, fdd-loop, frontend, grafana, host-stats, mcp-rag, mosquitto, weather-scraper
+                           Services: api, bacnet-server, bacnet-scraper, caddy, db, fdd-loop, frontend, grafana, host-stats, mcp-rag, mosquitto, onboard-scraper, weather-scraper
   --build-all               Rebuild + restart all services, then exit
   --frontend                Before start: stop frontend, remove frontend node_modules volume (fresh npm install on next up; use after package.json changes)
 
@@ -2144,9 +2144,17 @@ print(json.dumps({
     'open_meteo_timezone': os.environ.get('OFDD_OPEN_METEO_TIMEZONE', 'America/Chicago'),
     'open_meteo_days_back': env('OFDD_OPEN_METEO_DAYS_BACK', 3),
     'open_meteo_site_id': om_site,
+    'onboard_enabled': env('OFDD_ONBOARD_ENABLED', False),
+    'onboard_api_base_url': os.environ.get('OFDD_ONBOARD_API_BASE_URL', 'https://api.onboarddata.io'),
+    'onboard_building_ids': os.environ.get('OFDD_ONBOARD_BUILDING_IDS', ''),
+    'onboard_scrape_interval_min': env('OFDD_ONBOARD_SCRAPE_INTERVAL_MIN', 15),
+    'onboard_backfill_start': os.environ.get('OFDD_ONBOARD_BACKFILL_START') or None,
+    'onboard_backfill_end': os.environ.get('OFDD_ONBOARD_BACKFILL_END') or None,
+    'onboard_site_id_strategy': os.environ.get('OFDD_ONBOARD_SITE_ID_STRATEGY', 'onboard-building-id'),
+    'onboard_create_points': env('OFDD_ONBOARD_CREATE_POINTS', True),
     'graph_sync_interval_min': env('OFDD_GRAPH_SYNC_INTERVAL_MIN', 5),
 }))
-" 2>/dev/null) || body="{\"rule_interval_hours\":0.1,\"lookback_days\":3,\"rules_dir\":\"stack/rules\",\"brick_ttl_dir\":\"config\",\"bacnet_enabled\":true,\"bacnet_scrape_interval_min\":5,\"bacnet_server_url\":\"http://caddy:8081\",\"bacnet_site_id\":\"default\",\"open_meteo_enabled\":true,\"open_meteo_interval_hours\":24,\"open_meteo_latitude\":41.88,\"open_meteo_longitude\":-87.63,\"open_meteo_timezone\":\"America/Chicago\",\"open_meteo_days_back\":3,\"open_meteo_site_id\":\"default\",\"graph_sync_interval_min\":5}"
+" 2>/dev/null) || body="{\"rule_interval_hours\":0.1,\"lookback_days\":3,\"rules_dir\":\"stack/rules\",\"brick_ttl_dir\":\"config\",\"bacnet_enabled\":true,\"bacnet_scrape_interval_min\":5,\"bacnet_server_url\":\"http://caddy:8081\",\"bacnet_site_id\":\"default\",\"open_meteo_enabled\":true,\"open_meteo_interval_hours\":24,\"open_meteo_latitude\":41.88,\"open_meteo_longitude\":-87.63,\"open_meteo_timezone\":\"America/Chicago\",\"open_meteo_days_back\":3,\"open_meteo_site_id\":\"default\",\"onboard_enabled\":false,\"onboard_api_base_url\":\"https://api.onboarddata.io\",\"onboard_building_ids\":\"\",\"onboard_scrape_interval_min\":15,\"onboard_backfill_start\":null,\"onboard_backfill_end\":null,\"onboard_site_id_strategy\":\"onboard-building-id\",\"onboard_create_points\":true,\"graph_sync_interval_min\":5}"
 
   if curl -sf -X PUT "$API_BASE/config" -H "Content-Type: application/json" "${curl_auth[@]}" -d "$body" >/dev/null 2>&1; then
     echo "  PUT /config OK (config stored in RDF)."
@@ -2215,9 +2223,17 @@ print(json.dumps({
   'open_meteo_timezone': 'America/Chicago',
   'open_meteo_days_back': 3,
   'open_meteo_site_id': om_site,
+  'onboard_enabled': False,
+  'onboard_api_base_url': 'https://api.onboarddata.io',
+  'onboard_building_ids': '',
+  'onboard_scrape_interval_min': 15,
+  'onboard_backfill_start': None,
+  'onboard_backfill_end': None,
+  'onboard_site_id_strategy': 'onboard-building-id',
+  'onboard_create_points': True,
   'graph_sync_interval_min': 5,
 }))
-" 2>/dev/null)" || body='{"rule_interval_hours":3.0,"lookback_days":3,"rules_dir":"stack/rules","brick_ttl_dir":"config","bacnet_enabled":true,"bacnet_scrape_interval_min":5,"bacnet_server_url":"http://caddy:8081","bacnet_site_id":"default","bacnet_gateways":"","open_meteo_enabled":true,"open_meteo_interval_hours":24,"open_meteo_latitude":41.88,"open_meteo_longitude":-87.63,"open_meteo_timezone":"America/Chicago","open_meteo_days_back":3,"open_meteo_site_id":"default","graph_sync_interval_min":5}'
+" 2>/dev/null)" || body='{"rule_interval_hours":3.0,"lookback_days":3,"rules_dir":"stack/rules","brick_ttl_dir":"config","bacnet_enabled":true,"bacnet_scrape_interval_min":5,"bacnet_server_url":"http://caddy:8081","bacnet_site_id":"default","bacnet_gateways":"","open_meteo_enabled":true,"open_meteo_interval_hours":24,"open_meteo_latitude":41.88,"open_meteo_longitude":-87.63,"open_meteo_timezone":"America/Chicago","open_meteo_days_back":3,"open_meteo_site_id":"default","onboard_enabled":false,"onboard_api_base_url":"https://api.onboarddata.io","onboard_building_ids":"","onboard_scrape_interval_min":15,"onboard_backfill_start":null,"onboard_backfill_end":null,"onboard_site_id_strategy":"onboard-building-id","onboard_create_points":true,"graph_sync_interval_min":5}'
   resp_file="$(mktemp -t ofdd_enforce_network_default_XXXXXX)"
   http_code="$(curl -sS -o "$resp_file" -w "%{http_code}" -X PUT "$API_BASE/config" -H "Content-Type: application/json" "${curl_auth[@]}" -d "$body" 2>/dev/null || echo "000")"
   resp="$(cat "$resp_file" 2>/dev/null || true)"
@@ -2650,8 +2666,8 @@ elif [[ "$MODE" == "model" ]]; then
   echo "=== Starting model mode (DB + API + frontend + caddy) ==="
   $dc "${DC_PROFILE[@]}" up -d --build db api frontend caddy
 elif [[ "$MODE" == "engine" ]]; then
-  echo "=== Starting engine mode (DB + FDD + weather loop) ==="
-  $dc "${DC_PROFILE[@]}" up -d --build db fdd-loop weather-scraper
+  echo "=== Starting engine mode (DB + FDD + weather + onboard loops) ==="
+  $dc "${DC_PROFILE[@]}" up -d --build db fdd-loop weather-scraper onboard-scraper
 else
   echo "=== Building and starting full stack ==="
   $dc "${DC_PROFILE[@]}" up -d --build
@@ -2709,7 +2725,7 @@ elif [[ "$MODE" == "model" ]]; then
   bootstrap_print_remote_access_hints
   echo "  (Model mode: knowledge graph and CRUD workflows.)"
 elif [[ "$MODE" == "engine" ]]; then
-  echo "  (Engine mode: FDD and weather loops with DB. No API/frontend by default.)"
+  echo "  (Engine mode: FDD, weather, and onboard loops with DB. No API/frontend by default.)"
 else
   if grep -qE '^OFDD_ENABLE_OPENAPI_DOCS=true' "$STACK_DIR/.env" 2>/dev/null; then
     echo "  API:      http://127.0.0.1:8000   (Swagger/OpenAPI: /docs — on this host only)"

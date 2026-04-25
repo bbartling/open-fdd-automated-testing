@@ -6,7 +6,7 @@
 ![Development Status](https://img.shields.io/badge/status-Beta-blue)
 ![Python](https://img.shields.io/badge/Python-3.9+-blue?logo=python&logoColor=white)
 [![Engine (PyPI)](https://img.shields.io/pypi/v/open-fdd?label=engine%20(PyPI))](https://pypi.org/project/open-fdd/)
-[![Stack version](https://img.shields.io/badge/stack%20(pyproject.toml)-2.0.15-3776AB?labelColor=444)](https://github.com/bbartling/open-fdd-afdd-stack/blob/main/pyproject.toml)
+[![Stack version](https://img.shields.io/badge/stack%20(pyproject.toml)-2.0.16-3776AB?labelColor=444)](https://github.com/bbartling/open-fdd-afdd-stack/blob/main/pyproject.toml)
 
 <div align="center">
 
