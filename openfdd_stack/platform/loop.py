@@ -549,6 +549,8 @@ def run_fdd_loop(
     rules_dir: Optional[Path] = None,
     brick_ttl: Optional[Path] = None,
     lookback_days: Optional[int] = None,
+    start_ts: Optional[datetime] = None,
+    end_ts: Optional[datetime] = None,
     column_map_resolver: Optional["ColumnMapResolver"] = None,
 ) -> list[FDDResult]:
     """
@@ -615,8 +617,8 @@ def run_fdd_loop(
     runner = RuleRunner(rules=rules)
     strict = bool(getattr(settings, "fdd_strict_rules", False))
 
-    end_ts = datetime.now(timezone.utc)
-    start_ts = end_ts - timedelta(days=lookback)
+    run_end_ts = end_ts or datetime.now(timezone.utc)
+    run_start_ts = start_ts or (run_end_ts - timedelta(days=lookback))
 
     # Sites to run: one site or all
     with get_conn() as conn:
@@ -651,7 +653,7 @@ def run_fdd_loop(
             for eq_row in equipment_rows:
                 eq_name = eq_row["name"] or str(eq_row["id"])
                 df = load_timeseries_for_equipment(
-                    sid, eq_name, start_ts, end_ts, column_map
+                    sid, eq_name, run_start_ts, run_end_ts, column_map
                 )
                 if df is None or len(df) < 6:
                     continue
@@ -681,7 +683,7 @@ def run_fdd_loop(
                 all_results.extend(results)
             # Fallback: site-level run when no equipment had enough data
             if not ran_equipment:
-                df = load_timeseries_for_site(sid, start_ts, end_ts, column_map)
+                df = load_timeseries_for_site(sid, run_start_ts, run_end_ts, column_map)
                 if df is not None and len(df) >= 6:
                     sites_processed += 1
                     _log_missing_rule_inputs_non_strict(

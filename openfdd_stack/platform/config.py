@@ -49,6 +49,10 @@ class PlatformSettings(BaseSettings):
     # FDD loop
     rule_interval_hours: float = 3.0  # fractional OK for testing (e.g. 0.1 = 6 min)
     lookback_days: int = 3
+    fdd_backfill_enabled: bool = False
+    fdd_backfill_start: Optional[str] = None
+    fdd_backfill_end: Optional[str] = None
+    fdd_backfill_step_hours: int = 3
     fdd_trigger_file: Optional[str] = (
         "config/.run_fdd_now"  # touch to run now + reset timer
     )

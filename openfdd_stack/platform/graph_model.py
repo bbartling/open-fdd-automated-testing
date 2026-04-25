@@ -35,6 +35,10 @@ CONFIG_SUBJECT_URI = OFDD_NS + "platform_config"
 CONFIG_KEY_TO_PREDICATE = {
     "rule_interval_hours": "ruleIntervalHours",
     "lookback_days": "lookbackDays",
+    "fdd_backfill_enabled": "fddBackfillEnabled",
+    "fdd_backfill_start": "fddBackfillStart",
+    "fdd_backfill_end": "fddBackfillEnd",
+    "fdd_backfill_step_hours": "fddBackfillStepHours",
     "rules_dir": "rulesDir",
     "brick_ttl_dir": "brickTtlDir",
     "bacnet_enabled": "bacnetEnabled",
@@ -49,6 +53,14 @@ CONFIG_KEY_TO_PREDICATE = {
     "open_meteo_timezone": "openMeteoTimezone",
     "open_meteo_days_back": "openMeteoDaysBack",
     "open_meteo_site_id": "openMeteoSiteId",
+    "onboard_enabled": "onboardEnabled",
+    "onboard_api_base_url": "onboardApiBaseUrl",
+    "onboard_building_ids": "onboardBuildingIds",
+    "onboard_scrape_interval_min": "onboardScrapeIntervalMin",
+    "onboard_backfill_start": "onboardBackfillStart",
+    "onboard_backfill_end": "onboardBackfillEnd",
+    "onboard_site_id_strategy": "onboardSiteIdStrategy",
+    "onboard_create_points": "onboardCreatePoints",
     "graph_sync_interval_min": "graphSyncIntervalMin",
 }
 CONFIG_PREDICATE_TO_KEY = {v: k for k, v in CONFIG_KEY_TO_PREDICATE.items()}

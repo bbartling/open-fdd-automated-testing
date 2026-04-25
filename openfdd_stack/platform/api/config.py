@@ -21,6 +21,10 @@ router = APIRouter(prefix="/config", tags=["config"])
 CONFIG_KEYS = {
     "rule_interval_hours",
     "lookback_days",
+    "fdd_backfill_enabled",
+    "fdd_backfill_start",
+    "fdd_backfill_end",
+    "fdd_backfill_step_hours",
     "rules_dir",
     "brick_ttl_dir",
     "bacnet_enabled",
@@ -54,6 +58,18 @@ class ConfigBody(BaseModel):
         None, description="FDD rule run interval (hours)"
     )
     lookback_days: int | None = Field(None, description="Days of data per FDD run")
+    fdd_backfill_enabled: bool | None = Field(
+        None, description="Enable one-pass FDD historical backfill run"
+    )
+    fdd_backfill_start: str | None = Field(
+        None, description="Historical FDD backfill start timestamp (ISO-8601)"
+    )
+    fdd_backfill_end: str | None = Field(
+        None, description="Historical FDD backfill end timestamp (ISO-8601, optional)"
+    )
+    fdd_backfill_step_hours: int | None = Field(
+        None, description="Historical FDD backfill window size (hours)"
+    )
     rules_dir: str | None = Field(None, description="Path to FDD rules YAML")
     brick_ttl_dir: str | None = Field(None, description="Directory for Brick TTL")
     bacnet_enabled: bool | None = Field(None, description="Enable BACnet scraper")

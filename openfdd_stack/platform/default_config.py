@@ -8,6 +8,10 @@ the same graph; this dict is the default state so the app and tests stay in sync
 # AFDD rule running
 DEFAULT_RULE_INTERVAL_HOURS = 3.0  # Production default; FDD loop runs every N hours
 DEFAULT_LOOKBACK_DAYS = 3
+DEFAULT_FDD_BACKFILL_ENABLED = False
+DEFAULT_FDD_BACKFILL_START = None
+DEFAULT_FDD_BACKFILL_END = None
+DEFAULT_FDD_BACKFILL_STEP_HOURS = 3
 DEFAULT_RULES_DIR = "stack/rules"
 
 # Brick / data model TTL location
@@ -47,6 +51,10 @@ DEFAULT_GRAPH_SYNC_INTERVAL_MIN = 5
 DEFAULT_PLATFORM_CONFIG: dict = {
     "rule_interval_hours": DEFAULT_RULE_INTERVAL_HOURS,
     "lookback_days": DEFAULT_LOOKBACK_DAYS,
+    "fdd_backfill_enabled": DEFAULT_FDD_BACKFILL_ENABLED,
+    "fdd_backfill_start": DEFAULT_FDD_BACKFILL_START,
+    "fdd_backfill_end": DEFAULT_FDD_BACKFILL_END,
+    "fdd_backfill_step_hours": DEFAULT_FDD_BACKFILL_STEP_HOURS,
     "rules_dir": DEFAULT_RULES_DIR,
     "brick_ttl_dir": DEFAULT_BRICK_TTL_DIR,
     "bacnet_enabled": DEFAULT_BACNET_ENABLED,
