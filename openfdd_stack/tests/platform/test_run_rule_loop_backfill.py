@@ -3,16 +3,20 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+from openfdd_stack.platform.config import PlatformSettings
 from openfdd_stack.platform.drivers import run_rule_loop
 
 
-class _Settings:
-    def __init__(self):
-        self.open_meteo_enabled = False
-        self.fdd_backfill_enabled = True
-        self.fdd_backfill_start = "2026-04-01T00:00:00Z"
-        self.fdd_backfill_end = "2026-04-01T06:00:00Z"
-        self.fdd_backfill_step_hours = 3
+def _settings() -> PlatformSettings:
+    return PlatformSettings().model_copy(
+        update={
+            "open_meteo_enabled": False,
+            "fdd_backfill_enabled": True,
+            "fdd_backfill_start": "2026-04-01T00:00:00Z",
+            "fdd_backfill_end": "2026-04-01T06:00:00Z",
+            "fdd_backfill_step_hours": 3,
+        }
+    )
 
 
 def _patch_common(monkeypatch, settings: object):
@@ -30,7 +34,7 @@ def _patch_common(monkeypatch, settings: object):
 
 
 def test_main_runs_backfill_windows_then_normal_run(monkeypatch):
-    settings = _Settings()
+    settings = _settings()
     calls: list[tuple[datetime | None, datetime | None, int | None]] = []
     saves: list[datetime | None] = []
     _patch_common(monkeypatch, settings)
@@ -70,7 +74,7 @@ def test_main_runs_backfill_windows_then_normal_run(monkeypatch):
 
 
 def test_main_skips_completed_backfill_and_runs_normal(monkeypatch):
-    settings = _Settings()
+    settings = _settings()
     calls: list[tuple[datetime | None, datetime | None, int | None]] = []
     _patch_common(monkeypatch, settings)
     monkeypatch.setattr(
@@ -101,7 +105,7 @@ def test_main_skips_completed_backfill_and_runs_normal(monkeypatch):
 
 
 def test_loop_mode_backfill_failure_continues_with_regular_run(monkeypatch):
-    settings = _Settings()
+    settings = _settings()
     calls: list[tuple[datetime | None, datetime | None, int | None]] = []
     saved_states: list[tuple] = []
     _patch_common(monkeypatch, settings)
@@ -138,7 +142,7 @@ def test_loop_mode_backfill_failure_continues_with_regular_run(monkeypatch):
 
     def _stop_after_one_cycle(_seconds):
         tick["count"] += 1
-        if tick["count"] > 1:
+        if tick["count"] >= 1:
             raise RuntimeError("stop-loop")
 
     monkeypatch.setattr(run_rule_loop.time, "sleep", _stop_after_one_cycle)
@@ -149,5 +153,6 @@ def test_loop_mode_backfill_failure_continues_with_regular_run(monkeypatch):
         assert str(e) == "stop-loop"
 
     # Backfill window failed, but regular lookback run should still happen.
+    assert tick["count"] == 1
     assert any(call[2] == 3 and call[0] is None and call[1] is None for call in calls)
     assert saved_states == []

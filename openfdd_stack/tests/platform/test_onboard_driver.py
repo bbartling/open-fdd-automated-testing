@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 from openfdd_stack.platform.drivers import onboard
@@ -123,8 +125,9 @@ def test_run_onboard_ingest_once_runs_backfill_then_incremental(monkeypatch):
         "_insert_timeseries_rows",
         lambda _cur, rows: insert_calls.append(len(rows)) or len(rows),
     )
+    log = MagicMock(spec=logging.Logger)
     summary = onboard.run_onboard_ingest_once(
-        log=type("L", (), {"info": lambda *a, **k: None, "warning": lambda *a, **k: None})(),
+        log=log,
         base_url="https://api.onboarddata.io",
         api_key="test-key",
         building_filters=["Office Building"],
@@ -202,8 +205,9 @@ def test_run_onboard_ingest_once_runs_incremental_after_backfill(monkeypatch):
         "_insert_timeseries_rows",
         lambda _cur, rows: insert_calls.append(len(rows)) or len(rows),
     )
+    log = MagicMock(spec=logging.Logger)
     summary = onboard.run_onboard_ingest_once(
-        log=type("L", (), {"info": lambda *a, **k: None, "warning": lambda *a, **k: None})(),
+        log=log,
         base_url="https://api.onboarddata.io",
         api_key="test-key",
         building_filters=["Office Building"],

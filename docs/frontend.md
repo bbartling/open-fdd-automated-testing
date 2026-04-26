@@ -24,7 +24,7 @@ The Open-FDD **React frontend** is available at **http://localhost:5173** (direc
 | **Plots** | CSV Plotter workbench (Plotly-style). Load Open-FDD export CSV by site/range/points or drag-drop any CSV; choose X and multiple Y columns; toggle lines/points/both; optionally overlay faults and export CSV joined with `fault_*` 0/1 signals. |
 | **Web weather** | Open-Meteo weather charts (temp, RH, wind, radiation, etc.) when weather is enabled. |
 | **System resources** | Host and container metrics (when host-stats is running): memory, load, disk, **per-container CPU/memory** (table + time-series charts). Status badges (green/yellow/red) indicate resource pressure. |
-| **Stack status** | Overview shows API, BACnet gateway, and MQTT bridge status with **green / yellow / red** indicators (e.g. MQTT bridge connected = green, enabled but disconnected = yellow). |
+| **Stack status** | Overview shows API, BACnet gateway, and MQTT bridge status with **green / yellow / red / gray** indicators. **Gray** means disabled/not bootstrapped (for example BACnet disabled in `config/drivers.yaml`), **red** means bootstrapped but unhealthy/unreachable, and **green/yellow** follow normal healthy/degraded semantics. |
 
 ---
 

@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from openfdd_stack.platform.config import get_config_overlay, set_config_overlay
 from openfdd_stack.platform.default_config import DEFAULT_PLATFORM_CONFIG
-from openfdd_stack.platform.driver_profile import load_driver_profile
+from openfdd_stack.platform.driver_profile import driver_services_mapping, load_driver_profile
 from openfdd_stack.platform.graph_model import (
     get_config_from_graph,
     set_config_in_graph,
@@ -205,15 +205,7 @@ def get_driver_profile():
         "profile_path": str(path),
         "profile_exists": exists,
         "drivers": drivers,
-        "services": {
-            "bacnet-server": bool(drivers.get("bacnet", True)),
-            "bacnet-scraper": bool(drivers.get("bacnet", True)),
-            "fdd-loop": bool(drivers.get("fdd", True)),
-            "weather-scraper": bool(drivers.get("weather", True)),
-            "onboard-scraper": bool(drivers.get("onboard", False)),
-            "csv-scraper": bool(drivers.get("csv", False)),
-            "host-stats": bool(drivers.get("host_stats", True)),
-        },
+        "services": driver_services_mapping(drivers),
     }
 
 

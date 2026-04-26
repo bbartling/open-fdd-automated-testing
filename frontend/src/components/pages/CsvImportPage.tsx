@@ -3,7 +3,32 @@ import { useQuery } from "@tanstack/react-query";
 import { UploadCloud } from "lucide-react";
 
 import { ApiError } from "@/lib/api";
-import { getDriverProfileStatus, uploadCsvFile } from "@/lib/crud-api";
+import { getDriverProfileStatus, triggerRunFdd, uploadCsvFile } from "@/lib/crud-api";
+
+type CsvUiResult = {
+  ok?: boolean;
+  validated?: boolean;
+  preview?: {
+    rows_total?: number;
+    rows_with_valid_timestamp?: number;
+    timestamp_column?: string | null;
+    metric_columns?: string[];
+    warnings?: string[];
+  };
+  ingest?: {
+    rows_inserted?: number;
+    points_upserted?: number;
+  };
+  fdd_trigger?: {
+    status?: string;
+    path?: string;
+  } | null;
+  note?: string;
+  errors?: string[];
+  warnings?: string[];
+  timestamp_column?: string | null;
+  [key: string]: unknown;
+};
 
 export function CsvImportPage() {
   const { data: profile } = useQuery({
@@ -13,9 +38,10 @@ export function CsvImportPage() {
 
   const [siteId, setSiteId] = useState("csv-upload");
   const [createPoints, setCreatePoints] = useState(true);
+  const [runFddAfterIngest, setRunFddAfterIngest] = useState(true);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<unknown>(null);
+  const [result, setResult] = useState<CsvUiResult | null>(null);
   const [errorText, setErrorText] = useState("");
 
   const csvEnabled = profile?.drivers?.csv ?? false;
@@ -45,12 +71,23 @@ export function CsvImportPage() {
       const trimmedSource = file.name.replace(/\.csv$/i, "").trim();
       body.append("source_name", trimmedSource || file.name || "uploaded");
       const resp = await uploadCsvFile(body);
-      setResult(resp);
+      let fddTrigger: { status: string; path: string } | null = null;
+      if (runFddAfterIngest) {
+        fddTrigger = await triggerRunFdd();
+      }
+      setResult({
+        ...resp,
+        fdd_trigger: fddTrigger,
+        note:
+          runFddAfterIngest && fddTrigger
+            ? "FDD trigger created. If fdd_backfill_enabled=true, loop will run configured backfill windows before routine lookback."
+            : undefined,
+      });
     } catch (e) {
       if (e instanceof ApiError && e.payload && typeof e.payload === "object") {
         const payload = e.payload as { error?: { message?: string; details?: unknown } };
         setErrorText(payload.error?.message ?? e.message);
-        setResult(payload.error?.details ?? e.payload);
+        setResult((payload.error?.details as CsvUiResult) ?? (e.payload as CsvUiResult));
       } else {
         setErrorText(e instanceof Error ? e.message : "Upload failed");
       }
@@ -90,6 +127,14 @@ export function CsvImportPage() {
           />
           Auto-create missing points
         </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={runFddAfterIngest}
+            onChange={(e) => setRunFddAfterIngest(e.target.checked)}
+          />
+          Run FDD now after successful ingest
+        </label>
 
         <div
           className="rounded-xl border-2 border-dashed border-border p-8 text-center"
@@ -128,9 +173,76 @@ export function CsvImportPage() {
       ) : null}
 
       {result ? (
-        <pre className="max-h-[360px] overflow-auto rounded-xl border border-border/60 bg-muted/40 p-3 text-xs">
-          {JSON.stringify(result, null, 2)}
-        </pre>
+        <div className="space-y-3 rounded-xl border border-border/60 bg-muted/40 p-4 text-sm">
+          <p className="font-medium text-foreground">CSV result</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div>
+              <span className="text-muted-foreground">Validated:</span>{" "}
+              <span className="font-medium">{String(result.validated ?? false)}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Rows total:</span>{" "}
+              <span className="font-medium">{result.preview?.rows_total ?? "—"}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Rows with valid timestamp:</span>{" "}
+              <span className="font-medium">{result.preview?.rows_with_valid_timestamp ?? "—"}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Timestamp column:</span>{" "}
+              <span className="font-medium">{result.preview?.timestamp_column ?? result.timestamp_column ?? "—"}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Metric columns:</span>{" "}
+              <span className="font-medium">{result.preview?.metric_columns?.length ?? 0}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Rows inserted:</span>{" "}
+              <span className="font-medium">{result.ingest?.rows_inserted ?? 0}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Points upserted:</span>{" "}
+              <span className="font-medium">{result.ingest?.points_upserted ?? 0}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">FDD trigger:</span>{" "}
+              <span className="font-medium">{result.fdd_trigger?.status ?? "not triggered"}</span>
+            </div>
+          </div>
+
+          {(result.preview?.warnings?.length || result.warnings?.length) && (
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+              <p className="mb-1 font-medium text-amber-700 dark:text-amber-300">Warnings</p>
+              <ul className="list-disc space-y-1 pl-4">
+                {(result.preview?.warnings ?? result.warnings ?? []).map((w, i) => (
+                  <li key={`${w}-${i}`}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {result.errors?.length ? (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+              <p className="mb-1 font-medium">Validation errors</p>
+              <ul className="list-disc space-y-1 pl-4">
+                {result.errors.map((err, i) => (
+                  <li key={`${err}-${i}`}>{err}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {result.note ? (
+            <p className="rounded-lg border border-border/60 bg-card px-3 py-2 text-xs text-muted-foreground">{result.note}</p>
+          ) : null}
+
+          <details>
+            <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">Raw JSON</summary>
+            <pre className="mt-2 max-h-[240px] overflow-auto rounded-lg border border-border/60 bg-card p-3 text-xs">
+              {JSON.stringify(result, null, 2)}
+            </pre>
+          </details>
+        </div>
       ) : null}
     </div>
   );

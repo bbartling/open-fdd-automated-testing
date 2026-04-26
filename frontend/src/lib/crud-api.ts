@@ -88,6 +88,12 @@ export function uploadCsvFile(body: FormData) {
   });
 }
 
+export function triggerRunFdd() {
+  return apiFetch<{ status: string; path: string }>("/run-fdd", {
+    method: "POST",
+  });
+}
+
 export function createSite(body: SiteCreate) {
   return apiFetch<Site>("/sites", {
     method: "POST",

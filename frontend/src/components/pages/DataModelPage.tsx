@@ -43,6 +43,7 @@ export function DataModelPage() {
   const [importResult, setImportResult] = useState<DataModelImportResponse | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importErrorDetails, setImportErrorDetails] = useState<unknown>(null);
+  const [importSanitizeNotes, setImportSanitizeNotes] = useState<string[]>([]);
   const [checkResult, setCheckResult] = useState<DataModelCheckResponse | null>(null);
   const [resetConfirm, setResetConfirm] = useState("");
   const [deleteAllConfirm, setDeleteAllConfirm] = useState("");
@@ -68,7 +69,9 @@ export function DataModelPage() {
       const q = selectedSiteId
         ? `?site_id=${encodeURIComponent(selectedSiteId)}`
         : "";
-      return apiFetch<DataModelExportRow[]>(`/data-model/export${q}`);
+      return apiFetch<{ points: DataModelExportRow[] }>(`/data-model/export/import-template${q}`).then(
+        (body) => body.points ?? [],
+      );
     },
     staleTime: 60 * 1000,
   });
@@ -130,21 +133,92 @@ export function DataModelPage() {
   const exportJson = exportData == null ? "" : JSON.stringify(exportData, null, 2);
 
   const handleImport = () => {
+    const pointAllowedKeys = new Set([
+      "point_id",
+      "site_id",
+      "site_name",
+      "equipment_id",
+      "equipment_name",
+      "equipment_type",
+      "external_id",
+      "bacnet_device_id",
+      "object_identifier",
+      "object_name",
+      "brick_type",
+      "rule_input",
+      "fdd_input",
+      "unit",
+      "description",
+      "polling",
+      "modbus_config",
+    ]);
+    const equipmentAllowedKeys = new Set([
+      "equipment_id",
+      "equipment_name",
+      "equipment_type",
+      "site_id",
+      "feeds_equipment_id",
+      "fed_by_equipment_id",
+      "feeds",
+      "fed_by",
+      "metadata",
+      "engineering",
+    ]);
+    const dropped: string[] = [];
     try {
       const parsed = JSON.parse(importJson) as DataModelImportBody | DataModelExportRow[];
-      const body: DataModelImportBody = Array.isArray(parsed) ? { points: parsed } : parsed;
+      const rawBody: DataModelImportBody = Array.isArray(parsed) ? { points: parsed } : parsed;
+      const body: DataModelImportBody = {
+        points: (rawBody.points ?? []).map((p, idx) => {
+          if (!p || typeof p !== "object") return p;
+          const cleaned = Object.fromEntries(
+            Object.entries(p).filter(([k]) => {
+              const keep = pointAllowedKeys.has(k);
+              if (!keep) dropped.push(`points[${idx}].${k}`);
+              return keep;
+            }),
+          );
+          return cleaned;
+        }),
+        equipment: (rawBody.equipment ?? []).map((e, idx) => {
+          if (!e || typeof e !== "object") return e;
+          const cleaned = Object.fromEntries(
+            Object.entries(e).filter(([k]) => {
+              const keep = equipmentAllowedKeys.has(k);
+              if (!keep) dropped.push(`equipment[${idx}].${k}`);
+              return keep;
+            }),
+          );
+          return cleaned;
+        }),
+        template_hints:
+          rawBody.template_hints && typeof rawBody.template_hints === "object"
+            ? rawBody.template_hints
+            : undefined,
+      };
       if (!body.points?.length) {
         setImportError(null);
         setImportErrorDetails(null);
+        setImportSanitizeNotes([]);
         setImportResult({ total: 0, warnings: ["No points in payload"] });
         return;
       }
+      setImportSanitizeNotes(
+        dropped.length
+          ? [
+              `Dropped unsupported keys before import (${dropped.length}).`,
+              ...dropped.slice(0, 8),
+              ...(dropped.length > 8 ? [`...and ${dropped.length - 8} more`] : []),
+            ]
+          : [],
+      );
       setImportError(null);
       setImportErrorDetails(null);
       importMutation.mutate(body);
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "Invalid JSON");
       setImportErrorDetails(null);
+      setImportSanitizeNotes([]);
       setImportResult(null);
     }
   };
@@ -351,11 +425,9 @@ export function DataModelPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              GET /data-model/export — BACnet discovery + DB points. When a site is selected in the top bar, the export adds{" "}
-              <code className="rounded bg-muted px-1 text-xs">?site_id=…</code> so unimported discovery rows include{" "}
-              <code className="rounded bg-muted px-1 text-xs">site_id</code> / <code className="rounded bg-muted px-1 text-xs">site_name</code>{" "}
-              for LLM equipment tagging; with <strong>All sites</strong>, the API still pre-fills those fields if only one site exists.
-              Download JSON and use it with an <strong>external</strong> LLM or agent. Agents can pull documentation context from{" "}
+              GET /data-model/export/import-template — import-safe JSON for LLM tagging. When a site is selected in the top bar,
+              export adds <code className="rounded bg-muted px-1 text-xs">?site_id=…</code>. Download JSON and use it with an{" "}
+              <strong>external</strong> LLM or agent. Agents can pull documentation context from{" "}
               <code className="rounded bg-muted px-1 text-xs">GET /model-context/docs</code> and discover HTTP mappings from{" "}
               <code className="rounded bg-muted px-1 text-xs">GET /mcp/manifest</code>, then apply results with PUT /data-model/import below.
             </p>
@@ -396,7 +468,13 @@ export function DataModelPage() {
             <p className="text-sm text-muted-foreground">
               Paste JSON (array of points or <code className="rounded bg-muted px-1">{"{ points: [...] }"}</code>)
               or upload a JSON file, then click Import to update the data model. Same as PUT /data-model/import.
+              The importer auto-removes unsupported keys (example: <code>equipment[].site_name</code>) before sending.
             </p>
+            {importSanitizeNotes.length > 0 && (
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                {importSanitizeNotes.join(" ")}
+              </div>
+            )}
             {importError && (
               <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                 <span className="font-medium">Import failed:</span> {importError}

@@ -9,9 +9,9 @@
 # - fdd/weather/onboard/csv map to loop services with same names.
 
 drivers:
-  bacnet: true
+  bacnet: false
   fdd: true
-  weather: true
+  weather: false
   onboard: false
   csv: false
   host_stats: true

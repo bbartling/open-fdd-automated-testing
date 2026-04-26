@@ -36,11 +36,15 @@
 #   ./scripts/bootstrap.sh --maintenance --update --verify
 #
 #
-# Heavy ops example (pull, rebuild, verify, tests, app user, frontend volume reset, self-signed Caddy):
-#   printf '%s' 'asdf' | ./scripts/bootstrap.sh --maintenance --update --verify --force-rebuild --test --diy-bacnet-tests --user ben --password-stdin --frontend --caddy-self-signed
-#   printf '%s' 'asdf' | ./scripts/bootstrap.sh --maintenance --update --verify --force-rebuild --test --diy-bacnet-tests --user ben --password-stdin --frontend --bacnet-address 192.168.204.18/24:47808 --bacnet-instance 123456 --with-mcp-rag  --enforce-network-default
-#   Standard HTTP lab (OT NIC): ./scripts/bootstrap.sh --verify --bacnet-address 192.168.204.18/24:47808 --bacnet-instance 123456 --with-mcp-rag --enforce-network-default
-
+# Heavy ops example (known-good sequence):
+#   cd /home/ben/open-fdd-afdd-stack/stack && docker compose down --remove-orphans
+#   cd /home/ben/open-fdd-afdd-stack
+#   printf '%s' 'asdf' | ./scripts/bootstrap.sh --maintenance --update --verify --force-rebuild --user ben --password-stdin --frontend --caddy-self-signed
+#   ./scripts/bootstrap.sh --test --diy-bacnet-tests
+#   printf '%s' 'asdf' | ./scripts/bootstrap.sh --maintenance --update --verify --force-rebuild --user ben --password-stdin --frontend --bacnet-address 192.168.204.18/24:47808 --bacnet-instance 123456 --with-mcp-rag --enforce-network-default
+#   ./scripts/bootstrap.sh --test --diy-bacnet-tests
+#   printf '%s' 'asdf' | ./scripts/bootstrap.sh --mode full --force-rebuild --frontend --user ben --password-stdin && ./scripts/bootstrap.sh --test
+#   ./scripts/bootstrap.sh --test
 
 set -euo pipefail
 
@@ -117,15 +121,21 @@ if [[ -f "$STACK_DIR/.env" ]]; then
 fi
 
 DRIVER_PROFILE_CACHE_LOADED=0
-USE_BACNET=true
+USE_BACNET=false
 USE_FDD=true
-USE_WEATHER=true
+USE_WEATHER=false
 USE_ONBOARD=false
 USE_CSV=false
 USE_HOST_STATS=true
 
 load_driver_profile_cache() {
   [[ "$DRIVER_PROFILE_CACHE_LOADED" -eq 1 ]] && return 0
+  if ! have_cmd python3; then
+    echo "ERROR: python3 is required to parse DRIVER_PROFILE_FILE=$DRIVER_PROFILE_FILE."
+    echo "Expected booleans for: USE_BACNET USE_FDD USE_WEATHER USE_ONBOARD USE_CSV USE_HOST_STATS."
+    echo "Install python3 or fix PATH, then rerun bootstrap."
+    exit 1
+  fi
   while IFS='=' read -r k v; do
     case "$k" in
       bacnet) USE_BACNET="$v" ;;
@@ -142,13 +152,23 @@ import sys
 
 profile_path = pathlib.Path(sys.argv[1])
 defaults = {
-    "bacnet": True,
+    "bacnet": False,
     "fdd": True,
-    "weather": True,
+    "weather": False,
     "onboard": False,
     "csv": False,
     "host_stats": True,
 }
+
+try:
+    from openfdd_stack.platform.driver_profile import load_driver_profile
+
+    vals, _path, _exists = load_driver_profile()
+    for k, v in defaults.items():
+        print(f"{k}={'true' if bool(vals.get(k, v)) else 'false'}")
+    raise SystemExit(0)
+except Exception:
+    pass
 
 def parse_bool(v):
     if isinstance(v, bool):
@@ -374,7 +394,7 @@ Core:
   (no args)                 Build + start full stack (ALL services; Grafana/MQTT off unless flags below)
   --minimal                 Start minimal stack (db, bacnet-server, bacnet-scraper; add --with-grafana for Grafana)
   --mode MODE              Partial deployment mode: full, collector, model, engine (default: full)
-                           Note: in engine mode, onboard-scraper is useful only when OFDD_ONBOARD_ENABLED=true.
+                           Engine mode never includes bacnet-scraper; pair with a collector for BACnet ingestion.
                            Driver services can be profile-driven via config/drivers.yaml.
   --with-grafana            Include Grafana (http://localhost:3000; optional SQL dashboards)
   --with-mqtt-bridge        Start Mosquitto + wire BACnet2MQTT env (experimental; future remote/MQTT use—not core product yet)
@@ -2015,7 +2035,7 @@ ensure_docs_text_and_rag_index() {
 
 # --test scope: frontend lint + typecheck + vitest (unit); backend pytest (openfdd_stack/tests/); Caddy validate.
 # Does not run E2E Selenium (scripts/e2e_frontend_selenium.py) or long-running tests (e.g. long_term_bacnet_scrape_test).
-# Backend runs with OFDD_API_KEY unset so tests use no-auth app.
+# Backend runs with selected OFDD_* vars unset so tests are hermetic.
 verify_code() {
   local failed=0
   maybe_install_test_dev_deps
@@ -2126,6 +2146,10 @@ verify_code() {
     -u OFDD_CSV_BACKFILL_START
     -u OFDD_CSV_BACKFILL_END
     -u OFDD_CSV_CREATE_POINTS
+    -u OFDD_FDD_BACKFILL_ENABLED
+    -u OFDD_FDD_BACKFILL_START
+    -u OFDD_FDD_BACKFILL_END
+    -u OFDD_FDD_BACKFILL_STEP_HOURS
   )
   if (cd "$REPO_ROOT" && env "${pytest_env_unset[@]}" "$py" -m pytest $pytest_target -v --tb=short); then
     echo "Backend: OK"
@@ -2859,12 +2883,18 @@ elif [[ "$MODE" == "engine" ]]; then
   svc="$(driver_services_for_mode "engine")"
   # shellcheck disable=SC2206
   svc_arr=($svc)
+  $WITH_GRAFANA && svc_arr+=("grafana")
+  $WITH_MQTT_BRIDGE && svc_arr+=("mosquitto")
+  $WITH_MCP_RAG && svc_arr+=("mcp-rag")
   echo "=== Starting engine mode (profile-driven services): $svc ==="
   $dc "${DC_PROFILE[@]}" up -d --build "${svc_arr[@]}"
 else
   svc="$(driver_services_for_mode "full")"
   # shellcheck disable=SC2206
   svc_arr=($svc)
+  $WITH_GRAFANA && svc_arr+=("grafana")
+  $WITH_MQTT_BRIDGE && svc_arr+=("mosquitto")
+  $WITH_MCP_RAG && svc_arr+=("mcp-rag")
   echo "=== Building and starting full stack (profile-driven services): $svc ==="
   $dc "${DC_PROFILE[@]}" up -d --build "${svc_arr[@]}"
 fi

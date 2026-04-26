@@ -4,6 +4,25 @@ Use `config/drivers.yaml` to declare which runtime services bootstrap should sta
 
 `scripts/bootstrap.sh` reads this file and only starts the matching driver services for each mode.
 
+## Default baseline (manual CSV-first)
+
+Current defaults prioritize UI/API workflows first, with collectors opt-in:
+
+```yaml
+drivers:
+  bacnet: false
+  fdd: true
+  weather: false
+  onboard: false
+  csv: false
+  host_stats: true
+```
+
+This means:
+- CSV upload via frontend/API works (manual, one-shot ingest).
+- `csv-scraper` is not started unless `csv: true`.
+- BACnet/Onboard/Weather collectors are disabled unless explicitly enabled.
+
 ## 1) Local BACnet Setup
 
 Use when you want local BACnet gateway + scrape + standard FDD/weather loop.
@@ -33,6 +52,13 @@ Start and verify:
 curl -s -X POST http://localhost:8080/server_hello \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":"1","method":"server_hello","params":{}}' | jq .
+```
+
+For a clean profile reconciliation, run stack bootstrap first, then tests:
+
+```bash
+./scripts/bootstrap.sh --mode full --force-rebuild --verify
+./scripts/bootstrap.sh --test
 ```
 
 ## 2) CSV Ingest Setup

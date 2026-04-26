@@ -105,7 +105,11 @@ def main() -> int:
         api_key = (settings.onboard_api_key or "").strip()
         if not api_key:
             log.error("OFDD_ONBOARD_API_KEY is required when onboard_enabled=true.")
-            return 1
+            if not args.loop:
+                return 1
+            sleep_sec = max(1, int(settings.onboard_scrape_interval_min)) * 60
+            time.sleep(sleep_sec)
+            continue
 
         base_url = str(
             _cfg_value(cfg, "onboard_api_base_url", settings.onboard_api_base_url)
@@ -173,10 +177,10 @@ def main() -> int:
             )
             log.info(
                 "Onboard ingest OK: buildings=%s points_seen=%s points_upserted=%s rows=%s",
-                summary["buildings"],
-                summary["points_seen"],
-                summary["points_upserted"],
-                summary["rows_inserted"],
+                summary.get("buildings", 0),
+                summary.get("points_seen", 0),
+                summary.get("points_upserted", 0),
+                summary.get("rows_inserted", 0),
             )
         except Exception as e:
             log.exception("Onboard ingest failed: %s", e)

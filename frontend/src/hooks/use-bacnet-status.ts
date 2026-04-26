@@ -31,7 +31,7 @@ export const SERVER_HELLO_REQUEST_INIT: RequestInit = {
 };
 
 /** POST /bacnet/server_hello — returns gateway and mqtt_bridge status. */
-export function useBacnetStatus(): UseQueryResult<BacnetStatusResult, Error> {
+export function useBacnetStatus(enabled = true): UseQueryResult<BacnetStatusResult, Error> {
   return useQuery<BacnetStatusResult>({
     queryKey: ["bacnet", "server_hello"],
     queryFn: async (): Promise<BacnetStatusResult> => {
@@ -107,5 +107,6 @@ export function useBacnetStatus(): UseQueryResult<BacnetStatusResult, Error> {
     staleTime: 30 * 1000,
     refetchInterval: 60 * 1000,
     retry: false,
+    enabled,
   });
 }

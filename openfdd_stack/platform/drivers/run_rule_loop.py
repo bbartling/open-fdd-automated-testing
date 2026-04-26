@@ -280,7 +280,17 @@ def main() -> int:
                                 e,
                             )
                         log.info("Trigger file detected → running now, timer reset")
-                        _run(lookback_days=lookback_days)
+                        rc, backfill_ran = _run_backfill_pass()
+                        if rc != 0:
+                            log.error(
+                                "Triggered FDD backfill pass failed with rc=%s; continuing with routine lookback run",
+                                rc,
+                            )
+                            _run(lookback_days=lookback_days)
+                        elif backfill_ran:
+                            log.info("Triggered backfill windows ran; skipping routine lookback run")
+                        else:
+                            _run(lookback_days=lookback_days)
                         elapsed = 0  # reset timer
             log.info("Next run in %.2f h", interval_hours)
     else:

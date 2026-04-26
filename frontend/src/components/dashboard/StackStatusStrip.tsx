@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useHealth } from "@/hooks/use-fdd-status";
 import { useBacnetStatus } from "@/hooks/use-bacnet-status";
+import { getDriverProfileStatus } from "@/lib/crud-api";
 import { stackStatusConsoleWarn } from "@/lib/stack-status-console";
 import { cn } from "@/lib/utils";
 
@@ -35,21 +37,33 @@ function StatusDot({ status, label, title }: { status: Status; label: string; ti
 
 export function StackStatusStrip() {
   const { data: health, isError: healthError, isLoading: healthLoading } = useHealth();
-  const { data: bacnet, isError: bacnetError, isLoading: bacnetLoading } = useBacnetStatus();
+  const { data: profile, isLoading: profileLoading, isError: profileError } = useQuery({
+    queryKey: ["driver-profile"],
+    queryFn: getDriverProfileStatus,
+    retry: false,
+  });
+  // Fail closed: unless bootstrap profile explicitly says BACnet is enabled,
+  // render BACnet as neutral gray and avoid noisy server_hello probes.
+  const bacnetBootstrapped = profile?.drivers?.bacnet === true;
+  const { data: bacnet, isError: bacnetError, isLoading: bacnetLoading } = useBacnetStatus(bacnetBootstrapped);
 
   const apiStatus: Status = healthLoading ? "gray" : healthError || health?.status !== "ok" ? "red" : "green";
   const result = bacnet?.body?.result;
   const mqtt = result?.mqtt_bridge;
-  const bacnetStatus: Status = bacnetLoading
+  const bacnetStatus: Status = profileLoading
     ? "gray"
-    : bacnetError || !bacnet?.ok
-      ? "red"
-      : "green";
+    : !bacnetBootstrapped
+      ? "gray"
+      : bacnetLoading
+        ? "gray"
+        : bacnetError || !bacnet?.ok
+          ? "red"
+          : "green";
   const mqttStatus: Status =
     !mqtt ? "gray" : mqtt.enabled && mqtt.connected ? "green" : mqtt.enabled ? "yellow" : "gray";
   const bacnetDiagnostics = bacnet?.diagnostics;
   const bacnetTroubleshooting =
-    bacnetStatus === "red" && bacnetDiagnostics
+    bacnetBootstrapped && bacnetStatus === "red" && bacnetDiagnostics
       ? `BACnet gateway unreachable (${bacnetDiagnostics.errorCategory}). API target: ${
           bacnetDiagnostics.gatewayUrlTheApiUses ?? "unknown"
         }. Check Network tab: ${bacnetDiagnostics.checkInNetworkTab}`
@@ -58,13 +72,15 @@ export function StackStatusStrip() {
   const stripDegradedSig = useRef("");
   useEffect(() => {
     if (healthLoading || bacnetLoading) return;
-    if (apiStatus !== "red" && bacnetStatus !== "red") {
+    if (apiStatus !== "red" && (!bacnetBootstrapped || bacnetStatus !== "red")) {
       stripDegradedSig.current = "";
       return;
     }
     const sig = [
       apiStatus,
       bacnetStatus,
+      bacnetBootstrapped ? "bootstrapped" : "not-bootstrapped",
+      profileError ? "driver-profile-error" : "driver-profile-ok",
       mqttStatus,
       healthError,
       bacnetError,
@@ -99,8 +115,11 @@ export function StackStatusStrip() {
   }, [
     apiStatus,
     bacnetStatus,
+    bacnetBootstrapped,
+    profileError,
     mqttStatus,
     healthLoading,
+    profileLoading,
     bacnetLoading,
     healthError,
     bacnetError,
@@ -120,7 +139,9 @@ export function StackStatusStrip() {
         status={bacnetStatus}
         label="BACnet"
         title={
-          bacnetStatus === "green"
+          !bacnetBootstrapped
+            ? "BACnet not bootstrapped (disabled in driver profile)"
+            : bacnetStatus === "green"
             ? "BACnet gateway OK"
             : bacnetStatus === "red"
               ? "BACnet gateway unreachable"

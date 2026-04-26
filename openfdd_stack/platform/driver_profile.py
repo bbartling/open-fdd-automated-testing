@@ -7,13 +7,26 @@ import re
 from pathlib import Path
 
 DEFAULT_DRIVER_PROFILE: dict[str, bool] = {
-    "bacnet": True,
+    "bacnet": False,
     "fdd": True,
-    "weather": True,
+    "weather": False,
     "onboard": False,
     "csv": False,
     "host_stats": True,
 }
+
+
+def driver_services_mapping(drivers: dict[str, bool]) -> dict[str, bool]:
+    """Map driver flags to bootstrap service flags."""
+    return {
+        "bacnet-server": bool(drivers.get("bacnet", DEFAULT_DRIVER_PROFILE["bacnet"])),
+        "bacnet-scraper": bool(drivers.get("bacnet", DEFAULT_DRIVER_PROFILE["bacnet"])),
+        "fdd-loop": bool(drivers.get("fdd", DEFAULT_DRIVER_PROFILE["fdd"])),
+        "weather-scraper": bool(drivers.get("weather", DEFAULT_DRIVER_PROFILE["weather"])),
+        "onboard-scraper": bool(drivers.get("onboard", DEFAULT_DRIVER_PROFILE["onboard"])),
+        "csv-scraper": bool(drivers.get("csv", DEFAULT_DRIVER_PROFILE["csv"])),
+        "host-stats": bool(drivers.get("host_stats", DEFAULT_DRIVER_PROFILE["host_stats"])),
+    }
 
 
 def _parse_bool(value: object) -> bool | None:

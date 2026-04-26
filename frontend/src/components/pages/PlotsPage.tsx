@@ -8,7 +8,7 @@ import { DateRangeSelect } from "@/components/site/DateRangeSelect";
 import type { DatePreset } from "@/components/site/DateRangeSelect";
 import { Skeleton } from "@/components/ui/skeleton";
 import { downloadTimeseriesCsv, fetchCsv } from "@/lib/csv";
-import { purgeTimeseries } from "@/lib/crud-api";
+import { purgeTimeseries, triggerRunFdd } from "@/lib/crud-api";
 import {
   inferYColumns,
   joinFaultSignals,
@@ -106,23 +106,24 @@ function PlotlyCanvas({
 export function PlotsPage() {
   const { selectedSiteId } = useSiteContext();
   const [searchParams, setSearchParams] = useSearchParams();
-  const urlPlotDevice = searchParams.get("device") ?? "";
+  const urlPlotEquipment = searchParams.get("equipment") ?? searchParams.get("device") ?? "";
   const urlPlotFault = searchParams.get("fault") ?? "";
   const { data: points = [], isLoading: ptsLoading } = usePoints(selectedSiteId ?? undefined);
   const { data: equipment = [], isLoading: eqLoading } = useEquipment(selectedSiteId ?? undefined);
   const { data: faultState = [] } = useFaultState(selectedSiteId ?? undefined);
   const { data: bacnetDeviceFaults = [] } = useBacnetDeviceFaults(selectedSiteId ?? undefined);
   const { data: faultDefinitions = [] } = useFaultDefinitions();
-  const pollingPoints = useMemo(() => points.filter((p) => p.polling), [points]);
+  const modeledPoints = points;
 
   const [plotMode, setPlotMode] = useState<PlotMode>("lines");
   const [showFaultOverlays, setShowFaultOverlays] = useState(true);
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
+  const [selectedEquipmentId, setSelectedEquipmentId] = useState<string>("");
   const [selectedPointIds, setSelectedPointIds] = useState<string[]>([]);
   const [selectedFaultId, setSelectedFaultId] = useState<string>("");
   const [loadingCsv, setLoadingCsv] = useState(false);
   const [downloadingCsv, setDownloadingCsv] = useState(false);
   const [purgingTimeseries, setPurgingTimeseries] = useState(false);
+  const [runningFdd, setRunningFdd] = useState(false);
   const [parsedCsv, setParsedCsv] = useState<ParsedCsv | null>(null);
   const [yColumns, setYColumns] = useState<string[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
@@ -163,59 +164,52 @@ export function PlotsPage() {
     return presetRange(preset);
   }, [preset, customStart, customEnd]);
 
-  const deviceOptions = useMemo(() => {
-    const map = new Map<string, { label: string }>();
-    for (const p of pollingPoints) {
-      if (!p.bacnet_device_id) continue;
-      const eq = equipment.find((e) => e.id === p.equipment_id);
-      const label = eq ? `${p.bacnet_device_id} - ${eq.name}` : p.bacnet_device_id;
-      map.set(p.bacnet_device_id, { label });
-    }
-    return Array.from(map.entries())
-      .map(([id, v]) => ({ id, label: v.label }))
-      .sort((a, b) => a.id.localeCompare(b.id));
-  }, [pollingPoints, equipment]);
+  const equipmentOptions = useMemo(() => {
+    const byId = new Map(equipment.map((e) => [e.id, e]));
+    return Array.from(
+      new Set(modeledPoints.map((p) => p.equipment_id).filter((id): id is string => Boolean(id))),
+    )
+      .map((id) => {
+        const eq = byId.get(id);
+        return { id, label: eq ? eq.name : id };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [modeledPoints, equipment]);
 
-  const pointsForDevice = useMemo(
-    () => pollingPoints.filter((p) => p.bacnet_device_id === selectedDeviceId),
-    [pollingPoints, selectedDeviceId],
+  const pointsForEquipment = useMemo(
+    () => modeledPoints.filter((p) => p.equipment_id === selectedEquipmentId),
+    [modeledPoints, selectedEquipmentId],
   );
 
-  /** All equipment IDs tied to the selected BACnet device (one device can span multiple equipment records). */
-  const selectedDeviceEquipmentIds = useMemo(() => {
-    if (!selectedDeviceId) return new Set<string>();
+  const selectedEquipmentBacnetDeviceIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const p of pollingPoints) {
-      if (p.bacnet_device_id !== selectedDeviceId) continue;
-      if (p.equipment_id) ids.add(p.equipment_id);
+    for (const p of pointsForEquipment) {
+      if (p.bacnet_device_id) ids.add(String(p.bacnet_device_id));
     }
     return ids;
-  }, [pollingPoints, selectedDeviceId]);
+  }, [pointsForEquipment]);
 
-  const faultIdsForDevice = useMemo(() => {
-    if (!selectedDeviceId) return [];
+  const faultIdsForEquipment = useMemo(() => {
+    if (!selectedEquipmentId) return [];
     const set = new Set<string>();
-    const configured = bacnetDeviceFaults.find(
-      (d) => d.bacnet_device_id === selectedDeviceId,
-    );
-    for (const fid of configured?.applicable_fault_ids ?? []) {
-      if (fid) set.add(String(fid));
-    }
-    for (const fid of configured?.active_fault_ids ?? []) {
-      if (fid) set.add(String(fid));
+    for (const d of bacnetDeviceFaults) {
+      if (!selectedEquipmentBacnetDeviceIds.has(String(d.bacnet_device_id))) continue;
+      for (const fid of d.applicable_fault_ids ?? []) {
+        if (fid) set.add(String(fid));
+      }
+      for (const fid of d.active_fault_ids ?? []) {
+        if (fid) set.add(String(fid));
+      }
     }
     for (const f of faultState) {
       const fid = String(f.fault_id ?? "");
       if (!fid) continue;
-      const onEquipment =
-        f.equipment_id != null &&
-        f.equipment_id !== "" &&
-        selectedDeviceEquipmentIds.has(f.equipment_id);
-      const onBacnet = String(f.bacnet_device_id ?? "") === selectedDeviceId;
+      const onEquipment = f.equipment_id != null && f.equipment_id === selectedEquipmentId;
+      const onBacnet = selectedEquipmentBacnetDeviceIds.has(String(f.bacnet_device_id ?? ""));
       if (onEquipment || onBacnet) set.add(fid);
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [faultState, bacnetDeviceFaults, selectedDeviceId, selectedDeviceEquipmentIds]);
+  }, [faultState, bacnetDeviceFaults, selectedEquipmentId, selectedEquipmentBacnetDeviceIds]);
 
   const faultDefById = useMemo(() => {
     const m = new Map<string, FaultDefinition>();
@@ -233,16 +227,15 @@ export function PlotsPage() {
     [faultDefById],
   );
 
-  const pointIdsForExport = selectedPointIds.length > 0 ? selectedPointIds : pointsForDevice.map((p) => p.id);
+  const pointIdsForExport = selectedPointIds.length > 0 ? selectedPointIds : pointsForEquipment.map((p) => p.id);
   const pointSelectionKey = useMemo(() => {
-    const ids = selectedPointIds.length > 0 ? selectedPointIds : pointsForDevice.map((p) => p.id);
+    const ids = selectedPointIds.length > 0 ? selectedPointIds : pointsForEquipment.map((p) => p.id);
     return [...ids].sort().join("\0");
-  }, [selectedPointIds, pointsForDevice]);
+  }, [selectedPointIds, pointsForEquipment]);
   const faultBucket = pickFaultBucket(start, end);
-  /** Equipment rows tied to the selected BACnet device — backend must filter fault_results, not only site + fault_id. */
   const equipmentIdsForFaultOverlay = useMemo(
-    () => Array.from(selectedDeviceEquipmentIds).sort(),
-    [selectedDeviceEquipmentIds],
+    () => (selectedEquipmentId ? [selectedEquipmentId] : []),
+    [selectedEquipmentId],
   );
   const { data: faultData } = useFaultTimeseries(selectedSiteId ?? undefined, start, end, faultBucket, {
     enabled: !!(
@@ -267,7 +260,7 @@ export function PlotsPage() {
   useEffect(() => {
     setParsedCsv(null);
     setYColumns([]);
-  }, [selectedSiteId, selectedDeviceId, start, end, pointSelectionKey]);
+  }, [selectedSiteId, selectedEquipmentId, start, end, pointSelectionKey]);
 
   const loadOpenFddCsv = useCallback(async () => {
     if (!selectedSiteId) return;
@@ -305,14 +298,14 @@ export function PlotsPage() {
           format: "wide",
           point_ids: pointIdsForExport,
         },
-        `openfdd_plots_device-${selectedDeviceId}_${startD}_${endD}.csv`,
+        `openfdd_plots_equipment-${selectedEquipmentId}_${startD}_${endD}.csv`,
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to download CSV.");
     } finally {
       setDownloadingCsv(false);
     }
-  }, [selectedSiteId, start, end, pointIdsForExport, selectedDeviceId]);
+  }, [selectedSiteId, start, end, pointIdsForExport, selectedEquipmentId]);
 
   const purgeSiteTimeseries = useCallback(async () => {
     if (!selectedSiteId) return;
@@ -397,57 +390,70 @@ export function PlotsPage() {
   ]);
 
   useEffect(() => {
-    if (deviceOptions.length === 0) {
-      if (selectedDeviceId) setSelectedDeviceId("");
+    if (equipmentOptions.length === 0) {
+      if (selectedEquipmentId) setSelectedEquipmentId("");
       return;
     }
-    if (urlPlotDevice && deviceOptions.some((o) => o.id === urlPlotDevice)) {
-      if (selectedDeviceId !== urlPlotDevice) setSelectedDeviceId(urlPlotDevice);
+    if (urlPlotEquipment && equipmentOptions.some((o) => o.id === urlPlotEquipment)) {
+      if (selectedEquipmentId !== urlPlotEquipment) setSelectedEquipmentId(urlPlotEquipment);
       return;
     }
-    const stillValid = deviceOptions.some((o) => o.id === selectedDeviceId);
-    if (!stillValid || !selectedDeviceId) {
-      setSelectedDeviceId(deviceOptions[0].id);
+    const stillValid = equipmentOptions.some((o) => o.id === selectedEquipmentId);
+    if (!stillValid || !selectedEquipmentId) {
+      setSelectedEquipmentId(equipmentOptions[0].id);
     }
-  }, [selectedDeviceId, deviceOptions, urlPlotDevice]);
+  }, [selectedEquipmentId, equipmentOptions, urlPlotEquipment]);
 
-  const prevPointSeedDeviceIdRef = useRef<string>("");
+  const prevPointSeedEquipmentIdRef = useRef<string>("");
 
   useEffect(() => {
-    if (!selectedDeviceId) {
-      prevPointSeedDeviceIdRef.current = "";
+    if (!selectedEquipmentId) {
+      prevPointSeedEquipmentIdRef.current = "";
       return;
     }
-    const forDevice = pollingPoints.filter((p) => p.bacnet_device_id === selectedDeviceId);
-    const defaults = forDevice.slice(0, 4).map((p) => p.id);
-    const deviceChanged = prevPointSeedDeviceIdRef.current !== selectedDeviceId;
-    if (deviceChanged) {
-      prevPointSeedDeviceIdRef.current = selectedDeviceId;
+    const defaults = pointsForEquipment.slice(0, 6).map((p) => p.id);
+    const equipmentChanged = prevPointSeedEquipmentIdRef.current !== selectedEquipmentId;
+    if (equipmentChanged) {
+      prevPointSeedEquipmentIdRef.current = selectedEquipmentId;
       setSelectedPointIds(defaults);
       return;
     }
     setSelectedPointIds((prev) => {
-      const valid = prev.filter((id) => forDevice.some((p) => p.id === id));
+      const valid = prev.filter((id) => pointsForEquipment.some((p) => p.id === id));
       if (valid.length !== prev.length) {
         return valid.length > 0 ? valid : defaults;
       }
       return prev;
     });
-  }, [selectedDeviceId, pollingPoints]);
+  }, [selectedEquipmentId, pointsForEquipment]);
 
   useEffect(() => {
-    if (faultIdsForDevice.length === 0) {
+    if (faultIdsForEquipment.length === 0) {
       setSelectedFaultId("");
       return;
     }
-    if (urlPlotFault && faultIdsForDevice.includes(urlPlotFault)) {
+    if (urlPlotFault && faultIdsForEquipment.includes(urlPlotFault)) {
       if (selectedFaultId !== urlPlotFault) setSelectedFaultId(urlPlotFault);
       return;
     }
-    if (!faultIdsForDevice.includes(selectedFaultId)) {
-      setSelectedFaultId(faultIdsForDevice[0]);
+    if (!faultIdsForEquipment.includes(selectedFaultId)) {
+      setSelectedFaultId(faultIdsForEquipment[0]);
     }
-  }, [faultIdsForDevice, selectedFaultId, urlPlotFault]);
+  }, [faultIdsForEquipment, selectedFaultId, urlPlotFault]);
+
+  const runFddNow = useCallback(async () => {
+    setRunningFdd(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await triggerRunFdd();
+      setNotice("FDD trigger created. Loop will run now (and backfill first when enabled).");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to trigger FDD run.");
+    } finally {
+      setRunningFdd(false);
+    }
+  }, []);
 
   if (!selectedSiteId) {
     return (
@@ -476,7 +482,7 @@ export function PlotsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Plots</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Plot BACnet device trends with fault overlays.
+            Plot site/equipment trends from stored timeseries with optional fault overlays.
           </p>
         </div>
       </div>
@@ -517,19 +523,20 @@ export function PlotsPage() {
               htmlFor="plots-device-select"
               className="mb-1 block text-xs font-medium text-muted-foreground"
             >
-              BACnet device instance ID
+              Equipment
             </label>
             <select
               id="plots-device-select"
-              value={selectedDeviceId}
+              value={selectedEquipmentId}
               onChange={(e) => {
                 const id = e.target.value;
-                setSelectedDeviceId(id);
+                setSelectedEquipmentId(id);
                 setSearchParams(
                   (prev) => {
                     const next = new URLSearchParams(prev);
-                    if (id) next.set("device", id);
-                    else next.delete("device");
+                    if (id) next.set("equipment", id);
+                    else next.delete("equipment");
+                    next.delete("device");
                     next.delete("fault");
                     return next;
                   },
@@ -538,7 +545,7 @@ export function PlotsPage() {
               }}
               className="h-9 w-full rounded-lg border border-border/60 bg-background px-3 text-sm"
             >
-              {deviceOptions.map((d) => (
+              {equipmentOptions.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.label}
                 </option>
@@ -550,7 +557,7 @@ export function PlotsPage() {
               htmlFor="plots-points-select"
               className="mb-1 block text-xs font-medium text-muted-foreground"
             >
-              Points (for selected device)
+              Points (for selected equipment)
             </label>
             <select
               id="plots-points-select"
@@ -559,7 +566,7 @@ export function PlotsPage() {
               onChange={(e) => setSelectedPointIds(Array.from(e.target.selectedOptions).map((o) => o.value))}
               className="h-28 w-full rounded-lg border border-border/60 bg-background px-3 py-2 text-sm"
             >
-              {pointsForDevice.map((p) => (
+              {pointsForEquipment.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.object_name ?? p.external_id}
                 </option>
@@ -571,7 +578,7 @@ export function PlotsPage() {
               htmlFor="plots-faults-select"
               className="mb-1 block text-xs font-medium text-muted-foreground"
             >
-              Faults (for selected device)
+              Faults (for selected equipment)
             </label>
             <select
               id="plots-faults-select"
@@ -590,17 +597,17 @@ export function PlotsPage() {
                 );
               }}
               className="h-9 w-full rounded-lg border border-border/60 bg-background px-3 text-sm"
-              disabled={faultIdsForDevice.length === 0}
+              disabled={faultIdsForEquipment.length === 0}
               title={
-                faultIdsForDevice.length === 0
-                  ? "No applicable faults found from rule YAML + modeled points for this BACnet device."
+                faultIdsForEquipment.length === 0
+                  ? "No applicable faults found from rule YAML + modeled points for this equipment."
                   : undefined
               }
             >
-              {faultIdsForDevice.length === 0 ? (
-                <option value="">No applicable faults found for this device</option>
+              {faultIdsForEquipment.length === 0 ? (
+                <option value="">No applicable faults found for this equipment</option>
               ) : (
-                faultIdsForDevice.map((faultId) => (
+                faultIdsForEquipment.map((faultId) => (
                   <option key={faultId} value={faultId}>
                     {faultOptionLabel(faultId)}
                   </option>
@@ -609,18 +616,18 @@ export function PlotsPage() {
             </select>
           </div>
         </div>
-        {selectedDeviceId && faultIdsForDevice.length === 0 && (
+        {selectedEquipmentId && faultIdsForEquipment.length === 0 && (
           <p className="mt-2 text-xs text-muted-foreground">
-            Faults listed here are derived from rule YAML applicability + modeled points for this BACnet device
+            Faults listed here are derived from rule YAML applicability + modeled points for this equipment
             (with active fault state merged in). If empty, confirm point Brick types and rule inputs are modeled
-            for this device.
+            for this equipment.
           </p>
         )}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={loadOpenFddCsv}
-            disabled={loadingCsv || !selectedDeviceId || pointIdsForExport.length === 0}
+            disabled={loadingCsv || !selectedEquipmentId || pointIdsForExport.length === 0}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
           >
             <RefreshCw className="h-4 w-4" />
@@ -629,12 +636,22 @@ export function PlotsPage() {
           <button
             type="button"
             onClick={() => void downloadExcelCsv()}
-            disabled={downloadingCsv || !selectedDeviceId || pointIdsForExport.length === 0}
+            disabled={downloadingCsv || !selectedEquipmentId || pointIdsForExport.length === 0}
             className="inline-flex items-center gap-2 rounded-lg border border-border/60 bg-background px-4 py-2 text-sm font-medium disabled:opacity-50"
             title="UTF-8 with BOM, wide format: timestamp column plus one column per point (ISO UTC). Excel-ready."
           >
             <Download className="h-4 w-4" />
             {downloadingCsv ? "Downloading..." : "Download CSV"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void runFddNow()}
+            disabled={runningFdd}
+            className="inline-flex items-center gap-2 rounded-lg border border-border/60 bg-background px-4 py-2 text-sm font-medium disabled:opacity-50"
+            title="Trigger immediate FDD run (uses configured lookback/backfill settings)."
+          >
+            <RefreshCw className={`h-4 w-4 ${runningFdd ? "animate-spin" : ""}`} />
+            {runningFdd ? "Triggering FDD..." : "Run FDD now"}
           </button>
           <button
             type="button"
@@ -647,7 +664,9 @@ export function PlotsPage() {
             {purgingTimeseries ? "Purging..." : "Purge timeseries (site)"}
           </button>
           <span className="text-xs text-muted-foreground">
-            Timestamp is fixed to `timestamp`; fault data is joined automatically when available. CSV download matches the selected device, points, and date range (same as Load); opens cleanly in Excel. Purge clears old readings only and keeps the data model.
+            Timestamp is fixed to `timestamp`; fault data is joined automatically when available. CSV download matches selected
+            equipment, points, and date range (same as Load); opens cleanly in Excel. Purge clears old readings only and keeps
+            the data model.
           </span>
         </div>
       </div>
@@ -703,7 +722,7 @@ export function PlotsPage() {
           <div className="flex h-[50vh] min-h-[360px] items-center justify-center rounded-lg border border-dashed border-border bg-muted/20 text-sm text-muted-foreground">
             <span className="inline-flex items-center gap-2">
               <ChartLine className="h-4 w-4" />
-              Select a BACnet device, choose points, then load data to plot.
+              Select equipment, choose points, then load data to plot.
             </span>
           </div>
         )}

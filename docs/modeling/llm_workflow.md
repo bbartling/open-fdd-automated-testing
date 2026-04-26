@@ -369,6 +369,9 @@ To avoid that:
 
 4. **Pydantic in the repo** — The backend defines the import shape in **open_fdd/platform/api/data_model.py**: `DataModelImportBody`, `PointImportRow`, `EquipmentImportRow`. A script or pipeline can import those models and validate the LLM output (e.g. `DataModelImportBody.model_validate(json.loads(llm_output))`) before returning it to the human. That way the human only sees JSON that is known to parse on the backend.
 5. **Use the built-in validator script** — Run `python scripts/validate_data_model_import.py payload.json` before import. It prints failing paths like `equipment[0].unexpected_field` and exits non-zero on validation failure.
+6. **Common failure: `equipment[].site_name` extra field** — `EquipmentImportRow` does not accept `site_name` (it requires `site_id` when naming equipment by `equipment_name`). If you see:
+   `Request validation failed at equipment[0].site_name: Extra inputs are not permitted`
+   then remove `equipment[].site_name`, keep `equipment[].site_id`, and retry. The frontend importer now strips unsupported keys before PUT, but keeping prompts strict is still recommended.
 
 ---
 

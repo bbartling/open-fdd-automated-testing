@@ -119,10 +119,12 @@ def _insert_timeseries_rows(cur, rows: list[tuple]) -> int:
 def validate_csv_dataframe(df: pd.DataFrame) -> dict[str, Any]:
     """Validate a CSV dataframe and report model-style errors."""
     errors: list[str] = []
+    warnings: list[str] = []
     if df.empty:
         errors.append("CSV has no rows.")
         return {
             "errors": errors,
+            "warnings": warnings,
             "rows_total": 0,
             "rows_with_valid_timestamp": 0,
             "timestamp_column": None,
@@ -130,11 +132,12 @@ def validate_csv_dataframe(df: pd.DataFrame) -> dict[str, Any]:
         }
     try:
         ts_col = _infer_timestamp_column([str(c) for c in df.columns])
-    except Exception:
+    except ValueError:
         errors.append("Missing timestamp column. Expected 'timestamp' or similar name.")
         return {
             "errors": errors,
-            "rows_total": int(len(df.index)),
+            "warnings": warnings,
+            "rows_total": len(df.index),
             "rows_with_valid_timestamp": 0,
             "timestamp_column": None,
             "metric_columns": [],
@@ -160,13 +163,14 @@ def validate_csv_dataframe(df: pd.DataFrame) -> dict[str, Any]:
         if not numeric_cols:
             errors.append("No numeric metric columns found.")
         if non_numeric_cols:
-            errors.append(
+            warnings.append(
                 "Non-numeric columns (ignored for ingest): " + ", ".join(non_numeric_cols)
             )
 
     return {
         "errors": errors,
-        "rows_total": int(len(df.index)),
+        "warnings": warnings,
+        "rows_total": len(df.index),
         "rows_with_valid_timestamp": valid_ts,
         "timestamp_column": ts_col,
         "metric_columns": [str(c) for c in metric_cols],
@@ -227,8 +231,8 @@ def _resolve_or_create_points(
             ext_id = f"csv:{source_name}:{str(col).strip()}"
             cur.execute(
                 """
-                INSERT INTO points (site_id, external_id, description)
-                VALUES (%s, %s, %s)
+                INSERT INTO points (site_id, external_id, description, polling)
+                VALUES (%s, %s, %s, FALSE)
                 ON CONFLICT (site_id, external_id) DO UPDATE SET
                     description = EXCLUDED.description
                 RETURNING id
@@ -382,15 +386,22 @@ def run_csv_ingest_once(
                     )
 
                     inserted = _insert_timeseries_rows(cur, rows)
-                    last_ts = max(df["__ts"]).to_pydatetime()
+                    last_ts = df["__ts"].max().to_pydatetime()
                     _save_state(cur, state_key, last_ts)
                     conn.commit()
                     summary["sources"] += 1
                     summary["rows_inserted"] += inserted
                     if create_points:
                         summary["points_upserted"] += points_upserted
-            except Exception:
+            except Exception as e:
                 conn.rollback()
-                raise
+                log.exception(
+                    "CSV ingest failed for source=%s state_key=%s site_uuid=%s: %s",
+                    csv_path.stem,
+                    state_key,
+                    site_uuid,
+                    e,
+                )
+                continue
 
     return summary

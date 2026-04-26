@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Play, Code, FileUp, Wind, Cog } from "lucide-react";
+import { Play, Code, FileUp, Wind, Cog, FileText } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -11,6 +11,8 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { apiFetch } from "@/lib/api";
+import { apiFetchText } from "@/lib/api";
+import { writeTtlToPopup } from "@/lib/ttl-popup";
 import type { SparqlResponse } from "@/types/api";
 import { PREDEFINED_QUERIES, DEFAULT_SPARQL } from "@/data/data-model-testing-queries";
 
@@ -19,6 +21,8 @@ export function DataModelTestingPage() {
   const [sparqlError, setSparqlError] = useState<string | null>(null);
   const [includeBacnetRefs, setIncludeBacnetRefs] = useState(false);
   const [queryCategory, setQueryCategory] = useState<"hvac" | "engineering">("hvac");
+  const [ttlLoading, setTtlLoading] = useState(false);
+  const [ttlError, setTtlError] = useState<string | null>(null);
   /** Incremented on every SPARQL mutation settle (success or error); used by E2E to avoid reading stale tables. */
   const [sparqlFinishedGen, setSparqlFinishedGen] = useState(0);
   const sparqlFileInputRef = useRef<HTMLInputElement>(null);
@@ -39,6 +43,41 @@ export function DataModelTestingPage() {
     const q = includeBacnetRefs && queryWithBacnet ? queryWithBacnet : query;
     setSparqlQuery(q);
     sparqlMutation.mutate(q);
+  };
+
+  const handleViewTtl = async () => {
+    setTtlError(null);
+    setTtlLoading(true);
+    const ttlPath = "/data-model/ttl?save=false";
+    const popup = window.open("", "_blank");
+    if (!popup) {
+      setTtlError("Popup blocked. Allow popups for this site and try again.");
+      setTtlLoading(false);
+      return;
+    }
+    popup.document.write(
+      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Data model TTL</title></head><body style="font-family:ui-sans-serif,system-ui,sans-serif;padding:1rem;"><p style="margin:0 0 .75rem 0;">Loading TTL graph...</p><p style="margin:0;color:#666;">If this takes too long, <a href="${ttlPath}" target="_self" rel="noopener">open raw TTL directly</a>.</p></body></html>`,
+    );
+    popup.document.close();
+    try {
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), 45000);
+      const ttl = await apiFetchText(ttlPath, {
+        headers: { Accept: "text/plain" },
+        signal: controller.signal,
+      });
+      window.clearTimeout(timer);
+      writeTtlToPopup(popup, ttl);
+    } catch (err) {
+      try {
+        popup.location.href = ttlPath;
+      } catch {
+        popup.close?.();
+      }
+      setTtlError(err instanceof Error ? `Failed to load TTL in-app: ${err.message}` : "Failed to load TTL");
+    } finally {
+      setTtlLoading(false);
+    }
   };
 
   const sparqlBindings: Record<string, string | null>[] = sparqlMutation.data?.bindings ?? [];
@@ -64,6 +103,19 @@ export function DataModelTestingPage() {
         <code className="rounded bg-muted px-1 font-mono text-xs">Variable_Air_Volume_Box</code>) so AHUs / VAVs / chillers counts light up with one click — see the canonical prompt in{" "}
         <span className="font-medium">Docs → Data modeling → LLM workflow</span>.
       </p>
+      <div className="mb-4">
+        <button
+          type="button"
+          onClick={handleViewTtl}
+          disabled={ttlLoading}
+          className="inline-flex items-center gap-2 rounded-lg border border-border/60 bg-muted/50 px-4 py-2 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50"
+          title="Open full Brick + BACnet TTL in a new tab (raw text)"
+        >
+          <FileText className="h-4 w-4" />
+          {ttlLoading ? "Loading…" : "View full data model (TTL)"}
+        </button>
+        {ttlError ? <p className="mt-2 text-sm text-destructive">{ttlError}</p> : null}
+      </div>
 
       {/* One-click HVAC summary buttons */}
       <Card className="mb-8 border-primary/20 bg-primary/5">

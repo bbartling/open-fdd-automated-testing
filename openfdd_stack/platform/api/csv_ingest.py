@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import io
+import re
+from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field, ValidationError
@@ -15,6 +17,14 @@ from openfdd_stack.platform.drivers.csv_driver import (
 
 router = APIRouter(prefix="/csv", tags=["csv"])
 MAX_CSV_UPLOAD_BYTES = 10 * 1024 * 1024
+
+
+def _safe_source_name(form_source: str | None, file_name: str | None) -> str:
+    candidate = (form_source or "").strip()
+    if not candidate:
+        candidate = Path(file_name or "uploaded").stem
+    candidate = re.sub(r"[\x00-\x1f\x7f/:\\\\]+", "_", candidate).strip(" ._-")
+    return (candidate[:64] or "uploaded")
 
 
 class CsvUploadForm(BaseModel):
@@ -98,6 +108,7 @@ async def upload_csv(
                 "message": "CSV validation failed",
                 "details": {
                     "errors": validation["errors"],
+                    "warnings": validation.get("warnings", []),
                     "timestamp_column": validation.get("timestamp_column"),
                 },
             },
@@ -108,6 +119,7 @@ async def upload_csv(
         "rows_with_valid_timestamp": int(validation["rows_with_valid_timestamp"]),
         "timestamp_column": validation.get("timestamp_column"),
         "metric_columns": validation.get("metric_columns", []),
+        "warnings": validation.get("warnings", []),
     }
     if form.dry_run:
         return {"ok": True, "validated": True, "preview": preview}
@@ -116,7 +128,7 @@ async def upload_csv(
         ingest_csv_dataframe,
         site_id=form.site_id,
         df=df,
-        source_name=form.source_name or file.filename or "uploaded",
+        source_name=_safe_source_name(form.source_name, file.filename),
         create_points=form.create_points,
     )
     return {"ok": True, "validated": True, "preview": preview, "ingest": result}
